@@ -50,10 +50,9 @@
 - 在 `.env.local`（勿提交）中配置：
   - `BANGUMI_ACCESS_TOKEN`
   - `BANGUMI_USER_AGENT`
-  - `KV_REST_API_URL`、`KV_REST_API_TOKEN`（如启用 Vercel KV）
+  - `UPSTASH_REDIS_REST_URL`、`UPSTASH_REDIS_REST_TOKEN`（如启用分享/趋势持久化）
 - 分享图封面当前通过 `wsrv.nl` 在前端拉取并绘制；修改该链路时需评估跨域与流量成本影响。
 
 ## 提交与 PR 建议
 - 提交信息简短、祈使/现在时，聚焦单一改动。
 - PR 说明建议包含：改动范围、复现/验证步骤、必要截图、环境变量变更。
-

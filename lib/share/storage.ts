@@ -1,4 +1,4 @@
-import { kv } from "@vercel/kv";
+import { Redis } from "@upstash/redis";
 import { StoredShareV1, TrendPeriod, TrendResponse, TrendView } from "@/lib/share/types";
 import { DEFAULT_SUBJECT_KIND, SubjectKind, parseSubjectKind } from "@/lib/subject-kind";
 
@@ -8,9 +8,26 @@ const SHARE_INDEX_CREATED_KEY = "share:index:created";
 const SHARE_INDEX_UPDATED_KEY = "share:index:updated";
 const TRENDS_CACHE_PREFIX = "trends:cache:";
 
-const KV_ENABLED = Boolean(
-  process.env.KV_REST_API_URL && process.env.KV_REST_API_TOKEN
-);
+const REDIS_URL = process.env.UPSTASH_REDIS_REST_URL;
+const REDIS_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN;
+const REDIS_ENABLED = Boolean(REDIS_URL && REDIS_TOKEN);
+
+let redisClient: Redis | null = null;
+
+function getRedisClient(): Redis | null {
+  if (!REDIS_ENABLED) {
+    return null;
+  }
+  if (!redisClient) {
+    redisClient = new Redis({
+      url: REDIS_URL!,
+      token: REDIS_TOKEN!,
+      cache: "default",
+      enableAutoPipelining: true,
+    });
+  }
+  return redisClient;
+}
 
 type MemoryStore = {
   shares: Map<string, StoredShareV1>;
@@ -42,9 +59,14 @@ function trendCacheKey(period: TrendPeriod, view: TrendView, kind: SubjectKind) 
   return `${TRENDS_CACHE_PREFIX}${period}:${view}:${kind}`;
 }
 
-async function safeKvGet<T>(key: string): Promise<T | null> {
+async function safeRedisGet<T>(key: string): Promise<T | null> {
+  const redis = getRedisClient();
+  if (!redis) {
+    return null;
+  }
+
   try {
-    return (await kv.get<T>(key)) ?? null;
+    return (await redis.get<T>(key)) ?? null;
   } catch {
     return null;
   }
@@ -52,20 +74,25 @@ async function safeKvGet<T>(key: string): Promise<T | null> {
 
 export async function saveShare(record: StoredShareV1): Promise<void> {
   const normalizedRecord = normalizeStoredShare(record);
-  if (!KV_ENABLED) {
+  if (!REDIS_ENABLED) {
     getMemoryStore().shares.set(normalizedRecord.shareId, normalizedRecord);
     return;
   }
 
   const key = `${SHARE_KEY_PREFIX}${normalizedRecord.shareId}`;
+  const redis = getRedisClient();
+  if (!redis) {
+    getMemoryStore().shares.set(normalizedRecord.shareId, normalizedRecord);
+    return;
+  }
   try {
-    await kv.set(key, normalizedRecord);
-    await kv.sadd(SHARE_IDS_KEY, normalizedRecord.shareId);
-    await kv.zadd(SHARE_INDEX_CREATED_KEY, {
+    await redis.set(key, normalizedRecord);
+    await redis.sadd(SHARE_IDS_KEY, normalizedRecord.shareId);
+    await redis.zadd(SHARE_INDEX_CREATED_KEY, {
       score: normalizedRecord.createdAt,
       member: normalizedRecord.shareId,
     });
-    await kv.zadd(SHARE_INDEX_UPDATED_KEY, {
+    await redis.zadd(SHARE_INDEX_UPDATED_KEY, {
       score: normalizedRecord.updatedAt,
       member: normalizedRecord.shareId,
     });
@@ -75,15 +102,15 @@ export async function saveShare(record: StoredShareV1): Promise<void> {
 }
 
 export async function getShare(shareId: string): Promise<StoredShareV1 | null> {
-  if (!KV_ENABLED) {
+  if (!REDIS_ENABLED) {
     const fromMemory = getMemoryStore().shares.get(shareId);
     return fromMemory ? normalizeStoredShare(fromMemory) : null;
   }
 
   const key = `${SHARE_KEY_PREFIX}${shareId}`;
-  const fromKv = await safeKvGet<StoredShareV1 | (Omit<StoredShareV1, "kind"> & { kind?: unknown })>(key);
-  if (fromKv) {
-    return normalizeStoredShare(fromKv as StoredShareV1);
+  const fromRedis = await safeRedisGet<StoredShareV1 | (Omit<StoredShareV1, "kind"> & { kind?: unknown })>(key);
+  if (fromRedis) {
+    return normalizeStoredShare(fromRedis as StoredShareV1);
   }
   const fromMemory = getMemoryStore().shares.get(shareId);
   return fromMemory ? normalizeStoredShare(fromMemory) : null;
@@ -104,9 +131,14 @@ export async function touchShare(shareId: string, now = Date.now()): Promise<boo
   return true;
 }
 
-async function getAllShareIdsFromKv(): Promise<string[]> {
+async function getAllShareIdsFromRedis(): Promise<string[]> {
+  const redis = getRedisClient();
+  if (!redis) {
+    return [];
+  }
+
   try {
-    const ids = await kv.smembers<string[]>(SHARE_IDS_KEY);
+    const ids = await redis.smembers<string[]>(SHARE_IDS_KEY);
     if (Array.isArray(ids)) {
       return ids.map((id) => String(id));
     }
@@ -117,13 +149,13 @@ async function getAllShareIdsFromKv(): Promise<string[]> {
 }
 
 export async function listAllShares(): Promise<StoredShareV1[]> {
-  if (!KV_ENABLED) {
+  if (!REDIS_ENABLED) {
     return Array.from(getMemoryStore().shares.values()).map((item) =>
       normalizeStoredShare(item)
     );
   }
 
-  const ids = await getAllShareIdsFromKv();
+  const ids = await getAllShareIdsFromRedis();
   if (ids.length === 0) {
     return Array.from(getMemoryStore().shares.values()).map((item) =>
       normalizeStoredShare(item)
@@ -132,7 +164,7 @@ export async function listAllShares(): Promise<StoredShareV1[]> {
 
   const results: StoredShareV1[] = [];
   for (const shareId of ids) {
-    const record = await safeKvGet<StoredShareV1>(`${SHARE_KEY_PREFIX}${shareId}`);
+    const record = await safeRedisGet<StoredShareV1>(`${SHARE_KEY_PREFIX}${shareId}`);
     if (record) {
       results.push(normalizeStoredShare(record));
     }
@@ -166,7 +198,7 @@ export async function getTrendsCache(
   kind: SubjectKind
 ): Promise<TrendResponse | null> {
   const key = trendCacheKey(period, view, kind);
-  if (!KV_ENABLED) {
+  if (!REDIS_ENABLED) {
     const item = getMemoryStore().trendCache.get(key);
     if (!item) return null;
     if (Date.now() > item.expiresAt) {
@@ -176,7 +208,7 @@ export async function getTrendsCache(
     return item.value;
   }
 
-  const data = await safeKvGet<TrendResponse>(key);
+  const data = await safeRedisGet<TrendResponse>(key);
   if (data) {
     return data;
   }
@@ -203,13 +235,18 @@ export async function setTrendsCache(
     expiresAt: Date.now() + ttlSeconds * 1000,
   });
 
-  if (!KV_ENABLED) {
+  if (!REDIS_ENABLED) {
+    return;
+  }
+
+  const redis = getRedisClient();
+  if (!redis) {
     return;
   }
 
   try {
-    await kv.set(key, value, { ex: ttlSeconds });
+    await redis.set(key, value, { ex: ttlSeconds });
   } catch {
-    // ignore kv failures and keep in-memory cache
+    // ignore redis failures and keep in-memory cache
   }
 }
