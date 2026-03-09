@@ -228,6 +228,12 @@ test.describe("v3 interaction", () => {
     await expect(page.getByRole("button", { name: "生成分享图片" })).toHaveCount(0);
   });
 
+  test("非法 kind 路径会回落首页", async ({ page }) => {
+    await page.goto("/76c33a16-ef44-47ed-b239-d38b24206d95");
+    await expect(page).toHaveURL("/", { timeout: 30_000 });
+    await expect(page.getByRole("heading", { name: "构成我的九部" })).toBeVisible();
+  });
+
   test("搜索键盘选择、重复项互换与评论剧透折叠生效", async ({ page }) => {
     await page.goto("/game");
 
@@ -302,6 +308,34 @@ test.describe("v3 interaction", () => {
     const reopenedSearchInput = page.getByPlaceholder("输入游戏名");
     await expect(reopenedSearchInput).toHaveValue("zelda");
     await expect(page.locator("#search-results-list").getByText("塞尔达传说")).toBeVisible();
+  });
+
+  test("搜索缓存可跨刷新命中 sessionStorage", async ({ page }) => {
+    let searchRequestCount = 0;
+    page.on("request", (request) => {
+      if (request.url().includes("/api/subjects/search?")) {
+        searchRequestCount += 1;
+      }
+    });
+
+    await page.goto("/game");
+
+    await page.getByLabel("选择第 1 格游戏").click();
+    const firstSearchInput = page.getByPlaceholder("输入游戏名");
+    await firstSearchInput.fill("zelda");
+    await firstSearchInput.press("Enter");
+    await expect(page.locator("#search-results-list").getByText("塞尔达传说")).toBeVisible();
+    await page.getByRole("button", { name: "Close" }).click();
+
+    await page.reload();
+
+    await page.getByLabel("选择第 2 格游戏").click();
+    const secondSearchInput = page.getByPlaceholder("输入游戏名");
+    await secondSearchInput.fill("  Zelda   ");
+    await secondSearchInput.press("Enter");
+    await expect(page.locator("#search-results-list").getByText("塞尔达传说")).toBeVisible();
+
+    expect(searchRequestCount).toBe(1);
   });
 
   test("填写页刷新后保留本地缓存草稿", async ({ page }) => {
@@ -496,6 +530,12 @@ test.describe("v3 interaction", () => {
         HTMLAnchorElement.prototype.setAttribute = g.__ORIGIN_ANCHOR_SET_ATTRIBUTE__;
       }
     });
+  });
+
+  test("被污染 shareId 会重定向到规范链接", async ({ page }) => {
+    await page.goto(`/${DEFAULT_KIND}/s/${SHARE_ID}${encodeURIComponent("申请恢复访问")}`);
+    await expect(page).toHaveURL(`/${DEFAULT_KIND}/s/${SHARE_ID}`, { timeout: 30_000 });
+    await expect(page.getByText("这是共享页面（只读）")).toBeVisible();
   });
 
   test("不同类型表格草稿隔离，创作者全局共享", async ({ page }) => {

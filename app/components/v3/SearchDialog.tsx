@@ -14,6 +14,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { SubjectKindIcon } from "@/components/subject/SubjectKindIcon";
 import { SubjectKind } from "@/lib/subject-kind";
+import { normalizeSearchQuery } from "@/lib/search/query";
 import { ShareGame } from "@/lib/share/types";
 import { cn } from "@/lib/utils";
 
@@ -95,8 +96,9 @@ export function SearchDialog({
   }, [results, topPickIds]);
 
   const hasSearchedCurrentQuery = useMemo(() => {
-    const committed = committedQuery.trim();
-    return committed.length > 0 && committed === trimmedQuery;
+    const committed = normalizeSearchQuery(committedQuery);
+    const current = normalizeSearchQuery(trimmedQuery);
+    return committed.length > 0 && committed === current;
   }, [committedQuery, trimmedQuery]);
 
   const state: ViewState = useMemo(() => {
@@ -163,8 +165,10 @@ export function SearchDialog({
                     if (loading) {
                       return;
                     }
+                    const normalizedCommitted = normalizeSearchQuery(committedQuery);
                     const resultsMatchCurrentQuery =
-                      committedQuery.trim().length > 0 && committedQuery.trim() === trimmedQuery;
+                      normalizedCommitted.length > 0 &&
+                      normalizedCommitted === normalizeSearchQuery(trimmedQuery);
                     if (
                       resultsMatchCurrentQuery &&
                       activeIndex >= 0 &&

@@ -1,7 +1,13 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import My9V3App from "@/app/components/My9V3App";
-import { getSubjectKindMeta, parseSubjectKind } from "@/lib/subject-kind";
+import { SUBJECT_KIND_ORDER, getSubjectKindMeta, parseSubjectKind } from "@/lib/subject-kind";
+
+export const dynamicParams = false;
+
+export function generateStaticParams() {
+  return SUBJECT_KIND_ORDER.map((kind) => ({ kind }));
+}
 
 export function generateMetadata({
   params,

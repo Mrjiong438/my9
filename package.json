@@ -8,7 +8,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "test:e2e": "node node_modules/@playwright/test/cli.js test"
+    "test:e2e": "node node_modules/@playwright/test/cli.js test",
+    "analyze:edge-log": "node scripts/analyze-edge-log.mjs"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.0.2",

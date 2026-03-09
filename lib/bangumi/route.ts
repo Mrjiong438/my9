@@ -1,13 +1,14 @@
 import { NextResponse } from "next/server";
 import { DEFAULT_SUBJECT_KIND, SubjectKind, parseSubjectKind } from "@/lib/subject-kind";
 import { buildBangumiSearchResponse, searchBangumiSubjects } from "@/lib/bangumi/search";
+import { normalizeSearchQuery } from "@/lib/search/query";
 
 const SEARCH_CDN_TTL_SECONDS = 900;
 const SEARCH_STALE_TTL_SECONDS = 86400;
 const SEARCH_MEMORY_TTL_MS = 3 * 60 * 1000;
 const SEARCH_MEMORY_CACHE_MAX = 256;
 const SEARCH_RATE_LIMIT_WINDOW_MS = 10 * 1000;
-const SEARCH_RATE_LIMIT_MAX_REQUESTS = 12;
+const SEARCH_RATE_LIMIT_MAX_REQUESTS = 8;
 const SEARCH_RATE_LIMIT_STORE_MAX = 20000;
 
 const SEARCH_CACHE_CONTROL_VALUE = `public, max-age=0, s-maxage=${SEARCH_CDN_TTL_SECONDS}, stale-while-revalidate=${SEARCH_STALE_TTL_SECONDS}`;
@@ -20,6 +21,7 @@ type SearchMemoryStore = {
   resultCache: Map<string, { expiresAt: number; items: SearchItems }>;
   inflight: Map<string, Promise<SearchItems>>;
   rateLimit: Map<string, { windowStart: number; count: number }>;
+  rateLimitBlockedCount: number;
 };
 
 function getSearchMemoryStore(): SearchMemoryStore {
@@ -32,6 +34,7 @@ function getSearchMemoryStore(): SearchMemoryStore {
       resultCache: new Map<string, { expiresAt: number; items: SearchItems }>(),
       inflight: new Map<string, Promise<SearchItems>>(),
       rateLimit: new Map<string, { windowStart: number; count: number }>(),
+      rateLimitBlockedCount: 0,
     };
   }
 
@@ -47,7 +50,7 @@ function trimSearchMemoryCache(cache: Map<string, { expiresAt: number; items: Se
 }
 
 function toSearchCacheKey(kind: SubjectKind, query: string) {
-  return `${kind}:${query.trim().toLocaleLowerCase()}`;
+  return `${kind}:${normalizeSearchQuery(query)}`;
 }
 
 function toRateLimitKey(kind: SubjectKind, ip: string) {
@@ -136,6 +139,12 @@ function checkSearchRateLimit(request: Request, kind: SubjectKind): {
       1,
       Math.ceil((SEARCH_RATE_LIMIT_WINDOW_MS - (now - existing.windowStart)) / 1000)
     );
+    memory.rateLimitBlockedCount += 1;
+    if (memory.rateLimitBlockedCount <= 5 || memory.rateLimitBlockedCount % 50 === 0) {
+      console.warn(
+        `[search-rate-limit] blocked=${memory.rateLimitBlockedCount} kind=${kind} retry=${retryAfterSeconds}s`
+      );
+    }
     return {
       limited: true,
       retryAfterSeconds,
@@ -204,7 +213,7 @@ export async function handleBangumiSearchRequest(
   }
 ) {
   const { searchParams } = new URL(request.url);
-  const query = (searchParams.get("q") || "").trim();
+  const query = normalizeSearchQuery(searchParams.get("q"));
   const requestedKind = parseSubjectKind(searchParams.get("kind"));
   const kind = options?.forcedKind ?? requestedKind ?? DEFAULT_SUBJECT_KIND;
 

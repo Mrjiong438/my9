@@ -1,4 +1,5 @@
 const SHARE_ID_PATTERN = /^[a-f0-9]{16}$/;
+const SHARE_ID_PREFIX_PATTERN = /^([a-f0-9]{16})/;
 
 function randomHex(bytes: number): string {
   const buffer = new Uint8Array(bytes);
@@ -21,7 +22,31 @@ export function createShareId(): string {
 export function normalizeShareId(value: string | null | undefined): string | null {
   if (!value) return null;
   const trimmed = value.trim().toLowerCase();
-  return SHARE_ID_PATTERN.test(trimmed) ? trimmed : null;
+  if (SHARE_ID_PATTERN.test(trimmed)) {
+    return trimmed;
+  }
+
+  const exactPrefix = trimmed.match(SHARE_ID_PREFIX_PATTERN);
+  if (exactPrefix) {
+    return exactPrefix[1];
+  }
+
+  if (!trimmed.includes("%")) {
+    return null;
+  }
+
+  try {
+    const decoded = decodeURIComponent(trimmed);
+    const decodedPrefix = decoded.match(SHARE_ID_PREFIX_PATTERN);
+    return decodedPrefix ? decodedPrefix[1] : null;
+  } catch {
+    return null;
+  }
+}
+
+export function isCanonicalShareId(value: string | null | undefined): boolean {
+  if (!value) return false;
+  return SHARE_ID_PATTERN.test(value.trim().toLowerCase()) && value.trim().toLowerCase() === value.trim();
 }
 
 export function assertShareId(value: string | null | undefined): string {

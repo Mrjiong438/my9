@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { ChevronsUpDown } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { SharePlatformActions } from "@/components/share/SharePlatformActions";
@@ -21,6 +21,7 @@ import {
   getSubjectKindMeta,
   parseSubjectKind,
 } from "@/lib/subject-kind";
+import { normalizeSearchQuery } from "@/lib/search/query";
 import { SubjectSearchResponse, ShareGame } from "@/lib/share/types";
 import { cn } from "@/lib/utils";
 
@@ -71,8 +72,11 @@ function normalizeGamesForState(games?: Array<ShareGame | null>) {
 }
 
 const CREATOR_STORAGE_KEY = "my-nine-creator:v1";
-const SEARCH_CLIENT_CACHE_TTL_MS = 3 * 60 * 1000;
-const SEARCH_CLIENT_CACHE_MAX = 128;
+const SEARCH_CLIENT_CACHE_SESSION_KEY = "my-nine-search-cache:v1";
+const SEARCH_CLIENT_CACHE_TTL_MS = 15 * 60 * 1000;
+const SEARCH_CLIENT_CACHE_MAX = 192;
+const SEARCH_REQUEST_COOLDOWN_MS = 400;
+const SHARE_NAVIGATION_FALLBACK_MS = 1400;
 
 type SearchClientCacheEntry = {
   expiresAt: number;
@@ -80,7 +84,19 @@ type SearchClientCacheEntry = {
 };
 
 function buildSearchClientCacheKey(kind: SubjectKind, query: string) {
-  return `${kind}:${query.trim().toLocaleLowerCase()}`;
+  return `${kind}:${normalizeSearchQuery(query)}`;
+}
+
+function pruneExpiredSearchClientCache(cache: Map<string, SearchClientCacheEntry>, now = Date.now()) {
+  const expiredKeys: string[] = [];
+  cache.forEach((value, key) => {
+    if (!value || typeof value.expiresAt !== "number" || value.expiresAt <= now) {
+      expiredKeys.push(key);
+    }
+  });
+  for (const key of expiredKeys) {
+    cache.delete(key);
+  }
 }
 
 function trimSearchClientCache(cache: Map<string, SearchClientCacheEntry>) {
@@ -88,6 +104,47 @@ function trimSearchClientCache(cache: Map<string, SearchClientCacheEntry>) {
     const firstKey = cache.keys().next().value;
     if (!firstKey) return;
     cache.delete(firstKey);
+  }
+}
+
+function readSearchClientCacheFromSession() {
+  if (typeof window === "undefined") return new Map<string, SearchClientCacheEntry>();
+
+  try {
+    const raw = sessionStorage.getItem(SEARCH_CLIENT_CACHE_SESSION_KEY);
+    if (!raw) return new Map<string, SearchClientCacheEntry>();
+
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return new Map<string, SearchClientCacheEntry>();
+
+    const restored = new Map<string, SearchClientCacheEntry>();
+    for (const item of parsed) {
+      if (!Array.isArray(item) || item.length !== 2) continue;
+      const [key, value] = item as [unknown, unknown];
+      if (typeof key !== "string" || !value || typeof value !== "object") continue;
+      const entry = value as Partial<SearchClientCacheEntry>;
+      if (typeof entry.expiresAt !== "number" || !entry.response) continue;
+      restored.set(key, {
+        expiresAt: entry.expiresAt,
+        response: entry.response as SubjectSearchResponse,
+      });
+    }
+
+    pruneExpiredSearchClientCache(restored);
+    trimSearchClientCache(restored);
+    return restored;
+  } catch {
+    return new Map<string, SearchClientCacheEntry>();
+  }
+}
+
+function writeSearchClientCacheToSession(cache: Map<string, SearchClientCacheEntry>) {
+  if (typeof window === "undefined") return;
+  try {
+    const serialized = JSON.stringify(Array.from(cache.entries()));
+    sessionStorage.setItem(SEARCH_CLIENT_CACHE_SESSION_KEY, serialized);
+  } catch {
+    // ignore write errors
   }
 }
 
@@ -105,6 +162,7 @@ export default function My9V3App({
   readOnlyShare = false,
 }: My9V3AppProps) {
   const router = useRouter();
+  const pathname = usePathname();
   const kindMeta = useMemo(() => getSubjectKindMeta(kind), [kind]);
 
   const [games, setGames] = useState<Array<ShareGame | null>>(() =>
@@ -129,6 +187,10 @@ export default function My9V3App({
   const [searchActiveIndex, setSearchActiveIndex] = useState(-1);
   const [searchCommittedQuery, setSearchCommittedQuery] = useState("");
   const searchClientCacheRef = useRef<Map<string, SearchClientCacheEntry>>(new Map());
+  const searchClientCacheHydratedRef = useRef(false);
+  const lastSearchRequestRef = useRef<{ key: string; requestedAt: number } | null>(null);
+  const navigationFallbackTimerRef = useRef<number | null>(null);
+  const navigationFallbackTargetRef = useRef<string | null>(null);
   const [searchMeta, setSearchMeta] = useState<SearchMeta>(
     createSearchMeta([`可尝试${kindMeta.label}正式名或别名`, "中日英名称切换检索通常更有效", "减少关键词，仅保留核心词"])
   );
@@ -149,6 +211,24 @@ export default function My9V3App({
     [kindMeta.label]
   );
 
+  function ensureSearchClientCacheHydrated() {
+    if (searchClientCacheHydratedRef.current) return;
+    searchClientCacheRef.current = readSearchClientCacheFromSession();
+    searchClientCacheHydratedRef.current = true;
+  }
+
+  function persistSearchClientCache() {
+    writeSearchClientCacheToSession(searchClientCacheRef.current);
+  }
+
+  function clearNavigationFallback() {
+    if (navigationFallbackTimerRef.current !== null) {
+      window.clearTimeout(navigationFallbackTimerRef.current);
+      navigationFallbackTimerRef.current = null;
+    }
+    navigationFallbackTargetRef.current = null;
+  }
+
   useEffect(() => {
     if (!toast) return;
     const timer = setTimeout(() => setToast(null), 2800);
@@ -158,6 +238,34 @@ export default function My9V3App({
   useEffect(() => {
     setSearchMeta(createSearchMeta(defaultSuggestions));
   }, [defaultSuggestions]);
+
+  useEffect(() => {
+    if (searchClientCacheHydratedRef.current) return;
+    searchClientCacheRef.current = readSearchClientCacheFromSession();
+    searchClientCacheHydratedRef.current = true;
+  }, []);
+
+  useEffect(() => {
+    const pendingTarget = navigationFallbackTargetRef.current;
+    if (!pendingTarget) return;
+    if (pathname !== pendingTarget) return;
+    if (navigationFallbackTimerRef.current !== null) {
+      window.clearTimeout(navigationFallbackTimerRef.current);
+      navigationFallbackTimerRef.current = null;
+    }
+    navigationFallbackTargetRef.current = null;
+  }, [pathname]);
+
+  useEffect(
+    () => () => {
+      if (navigationFallbackTimerRef.current !== null) {
+        window.clearTimeout(navigationFallbackTimerRef.current);
+      }
+      navigationFallbackTimerRef.current = null;
+      navigationFallbackTargetRef.current = null;
+    },
+    []
+  );
 
   useEffect(() => {
     if (!initialShareData) return;
@@ -317,18 +425,30 @@ export default function My9V3App({
   }
 
   async function handleSearch() {
-    const q = searchQuery.trim();
-    if (q.length < 2) {
+    const normalizedQuery = normalizeSearchQuery(searchQuery);
+    if (normalizedQuery.length < 2) {
       setSearchError("至少输入 2 个字符");
       return;
     }
 
-    const cacheKey = buildSearchClientCacheKey(kind, q);
+    ensureSearchClientCacheHydrated();
+
+    const cacheKey = buildSearchClientCacheKey(kind, normalizedQuery);
+    const now = Date.now();
+    const lastRequest = lastSearchRequestRef.current;
+    if (
+      lastRequest &&
+      lastRequest.key === cacheKey &&
+      now - lastRequest.requestedAt < SEARCH_REQUEST_COOLDOWN_MS
+    ) {
+      return;
+    }
+
     const cached = searchClientCacheRef.current.get(cacheKey);
-    if (cached && cached.expiresAt > Date.now()) {
+    if (cached && cached.expiresAt > now) {
       const response = cached.response;
       setSearchError("");
-      setSearchCommittedQuery(q);
+      setSearchCommittedQuery(normalizedQuery);
       setSearchResults(Array.isArray(response.items) ? response.items : []);
       setSearchMeta({
         topPickIds: Array.isArray(response.topPickIds) ? response.topPickIds : [],
@@ -344,15 +464,22 @@ export default function My9V3App({
 
     if (cached) {
       searchClientCacheRef.current.delete(cacheKey);
+      persistSearchClientCache();
     }
 
+    lastSearchRequestRef.current = {
+      key: cacheKey,
+      requestedAt: now,
+    };
     setSearchLoading(true);
     setSearchError("");
     setSearchActiveIndex(-1);
-    setSearchCommittedQuery(q);
+    setSearchCommittedQuery(normalizedQuery);
 
     try {
-      const response = await fetch(`/api/subjects/search?q=${encodeURIComponent(q)}&kind=${encodeURIComponent(kind)}`);
+      const response = await fetch(
+        `/api/subjects/search?q=${encodeURIComponent(normalizedQuery)}&kind=${encodeURIComponent(kind)}`
+      );
       const json = (await response.json()) as Partial<SubjectSearchResponse> & {
         ok?: boolean;
         error?: string;
@@ -361,7 +488,7 @@ export default function My9V3App({
       if (!response.ok || !json?.ok) {
         setSearchError(json?.error || "搜索失败，请稍后再试");
         setSearchResults([]);
-        setSearchMeta(createSearchMeta(defaultSuggestions, q));
+        setSearchMeta(createSearchMeta(defaultSuggestions, normalizedQuery));
         return;
       }
 
@@ -382,7 +509,9 @@ export default function My9V3App({
         expiresAt: Date.now() + SEARCH_CLIENT_CACHE_TTL_MS,
         response: nextResponse,
       });
+      pruneExpiredSearchClientCache(searchClientCacheRef.current);
       trimSearchClientCache(searchClientCacheRef.current);
+      persistSearchClientCache();
 
       setSearchResults(nextResponse.items);
       setSearchMeta({
@@ -394,7 +523,7 @@ export default function My9V3App({
     } catch {
       setSearchError("搜索失败，请稍后再试");
       setSearchResults([]);
-      setSearchMeta(createSearchMeta(defaultSuggestions, q));
+      setSearchMeta(createSearchMeta(defaultSuggestions, normalizedQuery));
     } finally {
       setSearchLoading(false);
     }
@@ -505,12 +634,17 @@ export default function My9V3App({
       setShareId(json.shareId);
       pushToast("success", "分享页面已创建");
       const target = `/${targetKind}/s/${json.shareId}`;
+      clearNavigationFallback();
+      navigationFallbackTargetRef.current = target;
       router.replace(target);
-      window.setTimeout(() => {
-        if (window.location.pathname !== target) {
-          window.location.assign(target);
+      navigationFallbackTimerRef.current = window.setTimeout(() => {
+        const fallbackTarget = navigationFallbackTargetRef.current;
+        if (!fallbackTarget) return;
+        if (window.location.pathname !== fallbackTarget) {
+          window.location.assign(fallbackTarget);
         }
-      }, 120);
+        clearNavigationFallback();
+      }, SHARE_NAVIGATION_FALLBACK_MS);
     } catch {
       pushToast("error", "分享创建失败，请稍后重试");
     } finally {

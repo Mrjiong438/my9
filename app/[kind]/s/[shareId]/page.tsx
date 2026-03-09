@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
-import { notFound, redirect } from "next/navigation";
+import { notFound, permanentRedirect, redirect } from "next/navigation";
 import My9ReadonlyApp, { type InitialReadonlyShareData } from "@/app/components/My9ReadonlyApp";
-import { normalizeShareId } from "@/lib/share/id";
+import { isCanonicalShareId, normalizeShareId } from "@/lib/share/id";
 import { getShare } from "@/lib/share/storage";
 import { getSubjectKindMeta, parseSubjectKind } from "@/lib/subject-kind";
 
@@ -30,6 +30,10 @@ export default async function ShareReadonlyPage({
   const shareId = normalizeShareId(params.shareId);
   if (!kind || !shareId) {
     notFound();
+  }
+
+  if (!isCanonicalShareId(params.shareId) || params.shareId.trim().toLowerCase() !== shareId) {
+    permanentRedirect(`/${kind}/s/${shareId}`);
   }
 
   let initialShareData: InitialReadonlyShareData | null = null;
