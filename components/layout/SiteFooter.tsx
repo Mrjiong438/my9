@@ -242,7 +242,10 @@ export function SiteFooter({ className }: SiteFooterProps) {
             <section className="mt-5 border-t border-slate-200 pt-4">
               <h3 className="text-sm font-semibold text-slate-700">鸣谢名单</h3>
               <p className="mt-1 text-sm text-slate-500">
-                非常非常非常感谢以下各位的支持让站点能够运营下来……（日期从新到旧）
+                非常非常非常感谢以下各位的支持让站点能够运营下来……（排序从新到旧）
+              </p>
+              <p className="mt-1 text-sm text-slate-500">
+                各位的支持会成为站点存续的基石和我更新维护的动力！
               </p>
               <div className="mt-3 overflow-hidden rounded-lg border border-slate-200">
                 <table className="w-full table-fixed text-left text-xs text-slate-600">
