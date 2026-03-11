@@ -15,6 +15,10 @@ const donationAcknowledgements: Array<{
   amount: string;
   message: string;
 }> = [
+  { date: "2026-03-11", amount: "1", message: "" },
+  { date: "2026-03-11", amount: "50", message: "旻，屹立于大地之上！" },
+  { date: "2026-03-11", amount: "20", message: "喝个奶茶再接再厉🤣" },
+  { date: "2026-03-11", amount: "10", message: "" },
   { date: "2026-03-11", amount: "5.2", message: "老大加油！想问问网站搜索动画能加一个炫斗战轮吗？（开发者注：已在bangumi添加条目）​" },
   { date: "2026-03-11", amount: "100", message: "坏了我微信基本没存啥钱，下次加个支付宝的吧.jpg ​​​" },
   { date: "2026-03-11", amount: "50", message: "请阿旻老师吃kfc" },
