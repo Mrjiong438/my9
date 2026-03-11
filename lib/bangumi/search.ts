@@ -8,6 +8,7 @@ const BANGUMI_EXACT_KEYWORD_OVERRIDES: Record<string, string> = {
   // Bangumi API currently misses this query under simplified Chinese.
   仙剑奇侠传: "仙劍奇俠傳",
 };
+const BANGUMI_BLOCKED_SUBJECT_TITLES = new Set(["devil lover"]);
 
 type BangumiV0Tag = {
   name?: string;
@@ -52,6 +53,23 @@ function normalizeText(value: string): string {
   return value.trim().toLowerCase().replace(/\s+/g, "");
 }
 
+function normalizeBlockedTitle(value: string): string {
+  return value.trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+function isBlockedSubject(subject: Pick<ShareSubject, "name" | "localizedName">): boolean {
+  const titleCandidates = [subject.name, subject.localizedName || ""];
+  return titleCandidates.some((title) =>
+    BANGUMI_BLOCKED_SUBJECT_TITLES.has(normalizeBlockedTitle(title))
+  );
+}
+
+function filterBlockedSubjects<T extends Pick<ShareSubject, "name" | "localizedName">>(
+  items: T[]
+): T[] {
+  return items.filter((item) => !isBlockedSubject(item));
+}
+
 function scoreCandidate(query: string, subject: ShareSubject): number {
   const q = normalizeText(query);
   if (!q) return 0;
@@ -92,7 +110,8 @@ export function buildBangumiSearchResponse(
   }
 ): SubjectSearchResponse {
   const { query, kind, items } = params;
-  const ranked = items
+  const visibleItems = filterBlockedSubjects(items);
+  const ranked = visibleItems
     .map((item) => ({
       id: item.id,
       score: scoreCandidate(query, item),
@@ -102,16 +121,17 @@ export function buildBangumiSearchResponse(
     .slice(0, 3)
     .map((item) => item.id);
 
-  const topPickIds = ranked.length > 0 ? ranked : items.slice(0, 2).map((item) => item.id);
+  const topPickIds =
+    ranked.length > 0 ? ranked : visibleItems.slice(0, 2).map((item) => item.id);
 
   return {
     ok: true,
     source: "bangumi",
     kind,
-    items,
+    items: visibleItems,
     topPickIds,
     suggestions: createSuggestions(kind),
-    noResultQuery: items.length === 0 && query.trim() ? query : null,
+    noResultQuery: visibleItems.length === 0 && query.trim() ? query : null,
   };
 }
 
@@ -206,6 +226,7 @@ export async function searchBangumiSubjects(
   if (strictPlatform) {
     items = items.filter((item) => item.subjectPlatform === strictPlatform);
   }
+  items = filterBlockedSubjects(items);
 
   return items.slice(0, 20);
 }
