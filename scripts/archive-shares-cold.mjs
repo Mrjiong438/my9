@@ -7,7 +7,6 @@ import { gzipSync } from "node:zlib";
 
 const SHARES_V2_TABLE = "my9_share_registry_v2";
 const TREND_COUNT_DAY_TABLE = "my9_trend_subject_day_v2";
-const TREND_COUNT_HOUR_TABLE = "my9_trend_subject_hour_v1";
 
 function loadLocalEnvFiles() {
   const candidates = [".env.local", ".env"];
@@ -51,7 +50,6 @@ function buildDatabaseUrlFromNeonParts() {
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;
-const HOUR_MS = 60 * 60 * 1000;
 const BEIJING_TZ_OFFSET_MS = 8 * 60 * 60 * 1000;
 
 function toBeijingDayKey(timestampMs) {
@@ -60,10 +58,6 @@ function toBeijingDayKey(timestampMs) {
   const month = String(date.getUTCMonth() + 1).padStart(2, "0");
   const day = String(date.getUTCDate()).padStart(2, "0");
   return Number(`${year}${month}${day}`);
-}
-
-function toBeijingHourBucket(timestampMs) {
-  return Math.floor((timestampMs + BEIJING_TZ_OFFSET_MS) / HOUR_MS);
 }
 
 function parseArg(name, fallback) {
@@ -176,22 +170,13 @@ async function main() {
   }
 
   const cleanupBeforeKey = toBeijingDayKey(Date.now() - cleanupTrendDays * DAY_MS);
-  const cleanupBeforeHourBucket = toBeijingHourBucket(Date.now() - cleanupTrendDays * DAY_MS);
-  const deletedDayRows = await sql.query(
+  const deleted = await sql.query(
     `
     DELETE FROM ${TREND_COUNT_DAY_TABLE}
     WHERE day_key < $1
     RETURNING 1
     `,
     [cleanupBeforeKey]
-  );
-  const deletedHourRows = await sql.query(
-    `
-    DELETE FROM ${TREND_COUNT_HOUR_TABLE}
-    WHERE hour_bucket < $1
-    RETURNING 1
-    `,
-    [cleanupBeforeHourBucket]
   );
 
   console.log(
@@ -201,7 +186,7 @@ async function main() {
         processed: rows.length,
         archived,
         skipped,
-        cleanedTrendRows: deletedDayRows.length + deletedHourRows.length,
+        cleanedTrendRows: deleted.length,
         olderThanDays,
         batchSize,
         cleanupTrendDays,

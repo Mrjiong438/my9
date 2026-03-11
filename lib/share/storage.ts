@@ -29,10 +29,9 @@ const SHARE_ALIAS_TABLE = "my9_share_alias_v1";
 const SUBJECT_DIM_TABLE = "my9_subject_dim_v1";
 const TREND_COUNT_ALL_TABLE = "my9_trend_subject_all_v2";
 const TREND_COUNT_DAY_TABLE = "my9_trend_subject_day_v2";
-const TREND_COUNT_HOUR_TABLE = "my9_trend_subject_hour_v1";
 const TRENDS_CACHE_TABLE = "my9_trends_cache_v1";
-const TRENDS_CACHE_VERSION = "v9";
-const TRENDS_SAMPLE_CACHE_VERSION = "v5";
+const TRENDS_CACHE_VERSION = "v8";
+const TRENDS_SAMPLE_CACHE_VERSION = "v4";
 const SAMPLE_SUMMARY_CACHE_VIEW = "sample";
 const OVERALL_TREND_PAGE_SIZE = 20;
 const GROUPED_BUCKET_LIMIT = 20;
@@ -390,16 +389,6 @@ async function ensureSchema(): Promise<boolean> {
       `;
 
       await sql`
-        CREATE TABLE IF NOT EXISTS ${sql.unsafe(TREND_COUNT_HOUR_TABLE)} (
-          hour_bucket BIGINT NOT NULL,
-          subject_id TEXT NOT NULL,
-          count BIGINT NOT NULL,
-          updated_at BIGINT NOT NULL,
-          PRIMARY KEY (hour_bucket, subject_id)
-        )
-      `;
-
-      await sql`
         CREATE TABLE IF NOT EXISTS ${sql.unsafe(TRENDS_CACHE_TABLE)} (
           cache_key TEXT PRIMARY KEY,
           period TEXT NOT NULL,
@@ -662,7 +651,6 @@ async function tryCountSharesFromV1(sql: SqlClient): Promise<number | null> {
 
 type TrendIncrement = {
   dayKey: number;
-  hourBucket: number;
   subjectId: string;
   count: number;
 };
@@ -672,7 +660,6 @@ function buildTrendIncrements(params: {
   createdAt: number;
 }): TrendIncrement[] {
   const dayKey = toBeijingDayKey(params.createdAt);
-  const hourBucket = toBeijingHourBucket(params.createdAt);
   const countBySubject = new Map<string, number>();
 
   for (const slot of params.payload) {
@@ -682,7 +669,6 @@ function buildTrendIncrements(params: {
 
   return Array.from(countBySubject.entries()).map(([subjectId, count]) => ({
     dayKey,
-    hourBucket,
     subjectId,
     count,
   }));
@@ -735,7 +721,6 @@ export async function saveShare(record: StoredShareV1): Promise<{ shareId: strin
 
     const incrementRowsPayload = increments.map((item) => ({
       day_key: item.dayKey,
-      hour_bucket: item.hourBucket,
       subject_id: item.subjectId,
       count: item.count,
     }));
@@ -794,13 +779,11 @@ export async function saveShare(record: StoredShareV1): Promise<{ shareId: strin
       increment_rows AS (
         SELECT
           i.day_key,
-          i.hour_bucket,
           i.subject_id,
           i.count,
           $7::bigint AS updated_at
         FROM jsonb_to_recordset(COALESCE($10::jsonb, '[]'::jsonb)) AS i(
           day_key int,
-          hour_bucket bigint,
           subject_id text,
           count bigint
         )
@@ -822,15 +805,6 @@ export async function saveShare(record: StoredShareV1): Promise<{ shareId: strin
         FROM increment_rows
         ON CONFLICT (day_key, subject_id) DO UPDATE SET
           count = ${TREND_COUNT_DAY_TABLE}.count + EXCLUDED.count,
-          updated_at = EXCLUDED.updated_at
-        RETURNING 1
-      ),
-      trend_hour_upsert AS (
-        INSERT INTO ${TREND_COUNT_HOUR_TABLE} (hour_bucket, subject_id, count, updated_at)
-        SELECT hour_bucket, subject_id, count, updated_at
-        FROM increment_rows
-        ON CONFLICT (hour_bucket, subject_id) DO UPDATE SET
-          count = ${TREND_COUNT_HOUR_TABLE}.count + EXCLUDED.count,
           updated_at = EXCLUDED.updated_at
         RETURNING 1
       )
@@ -1115,15 +1089,12 @@ export async function countAllShares(): Promise<number> {
 function getPeriodStart(period: TrendPeriod, now = Date.now()): number {
   const getBeijingDayStart = (timestamp: number) =>
     Math.floor((timestamp + BEIJING_TZ_OFFSET_MS) / DAY_MS) * DAY_MS - BEIJING_TZ_OFFSET_MS;
-  const getBeijingHourStart = (timestamp: number) =>
-    Math.floor((timestamp + BEIJING_TZ_OFFSET_MS) / HOUR_MS) * HOUR_MS - BEIJING_TZ_OFFSET_MS;
 
   switch (period) {
     case "today":
       return getBeijingDayStart(now);
     case "24h":
-      // Keep exactly 24 hourly buckets: current hour + previous 23 hours.
-      return getBeijingHourStart(now) - 23 * HOUR_MS;
+      return now - DAY_MS;
     case "7d":
       return now - 7 * DAY_MS;
     case "30d":
@@ -1318,14 +1289,7 @@ export async function getAggregatedTrendResponse(params: {
   }
 
   const fromTimestamp = getPeriodStart(period);
-  const countSourceTable = period === "24h" ? TREND_COUNT_HOUR_TABLE : TREND_COUNT_DAY_TABLE;
-  const countSourceTimeColumn = period === "24h" ? "hour_bucket" : "day_key";
-  const fromCountSourceKey =
-    fromTimestamp > 0
-      ? period === "24h"
-        ? toBeijingHourBucket(fromTimestamp)
-        : toBeijingDayKey(fromTimestamp)
-      : null;
+  const fromDayKey = fromTimestamp > 0 ? toBeijingDayKey(fromTimestamp) : null;
   const overallOffset = Math.max(0, (overallPage - 1) * OVERALL_TREND_PAGE_SIZE);
   const yearFilterCondition = yearPage === "legacy" ? "d.release_year <= 2009" : "d.release_year >= 2010";
   const genreExcludeCondition =
@@ -1551,9 +1515,9 @@ export async function getAggregatedTrendResponse(params: {
           SELECT
             c.subject_id,
             SUM(c.count)::BIGINT AS count
-          FROM ${countSourceTable} c
+          FROM ${TREND_COUNT_DAY_TABLE} c
           JOIN ${SUBJECT_DIM_TABLE} d ON d.subject_id = c.subject_id AND d.kind = $1
-          WHERE c.${countSourceTimeColumn} >= $2
+          WHERE c.day_key >= $2
           GROUP BY c.subject_id
           ORDER BY SUM(c.count) DESC
           LIMIT ${OVERALL_TREND_PAGE_SIZE}
@@ -1564,7 +1528,7 @@ export async function getAggregatedTrendResponse(params: {
         JOIN ${SUBJECT_DIM_TABLE} d ON d.subject_id = tc.subject_id AND d.kind = $1
         ORDER BY tc.count DESC
         `,
-        [kind, fromCountSourceKey, overallOffset]
+        [kind, fromDayKey, overallOffset]
       )) as TrendSubjectCountRow[];
     } else if (view === "genre") {
       countRows = (await sql.query(
@@ -1578,9 +1542,9 @@ export async function getAggregatedTrendResponse(params: {
             d.cover,
             d.release_year,
             d.genres
-          FROM ${countSourceTable} c
+          FROM ${TREND_COUNT_DAY_TABLE} c
           JOIN ${SUBJECT_DIM_TABLE} d ON d.subject_id = c.subject_id AND d.kind = $1
-          WHERE c.${countSourceTimeColumn} >= $2
+          WHERE c.day_key >= $2
           GROUP BY c.subject_id, d.name, d.localized_name, d.cover, d.release_year, d.genres
         ),
         expanded AS (
@@ -1644,7 +1608,7 @@ export async function getAggregatedTrendResponse(params: {
         WHERE r.genre_rank <= 5
         ORDER BY r.total_count DESC, r.genre ASC, r.count DESC, r.subject_id ASC
         `,
-        [kind, fromCountSourceKey]
+        [kind, fromDayKey]
       )) as TrendSubjectCountRow[];
     } else if (view === "year") {
       countRows = (await sql.query(
@@ -1653,9 +1617,9 @@ export async function getAggregatedTrendResponse(params: {
           SELECT
             c.subject_id,
             SUM(c.count)::BIGINT AS count
-          FROM ${countSourceTable} c
+          FROM ${TREND_COUNT_DAY_TABLE} c
           JOIN ${SUBJECT_DIM_TABLE} d ON d.subject_id = c.subject_id AND d.kind = $1
-          WHERE c.${countSourceTimeColumn} >= $2
+          WHERE c.day_key >= $2
             AND d.release_year IS NOT NULL
             AND ${yearFilterCondition}
           GROUP BY c.subject_id
@@ -1690,7 +1654,7 @@ export async function getAggregatedTrendResponse(params: {
         WHERE r.bucket_rank <= 5
         ORDER BY r.bucket_year DESC, r.count DESC, r.subject_id ASC
         `,
-        [kind, fromCountSourceKey]
+        [kind, fromDayKey]
       )) as TrendSubjectCountRow[];
     } else {
       countRows = (await sql.query(
@@ -1699,9 +1663,9 @@ export async function getAggregatedTrendResponse(params: {
           SELECT
             c.subject_id,
             SUM(c.count)::BIGINT AS count
-          FROM ${countSourceTable} c
+          FROM ${TREND_COUNT_DAY_TABLE} c
           JOIN ${SUBJECT_DIM_TABLE} d ON d.subject_id = c.subject_id AND d.kind = $1
-          WHERE c.${countSourceTimeColumn} >= $2
+          WHERE c.day_key >= $2
             AND d.release_year IS NOT NULL
           GROUP BY c.subject_id
         ),
@@ -1735,7 +1699,7 @@ export async function getAggregatedTrendResponse(params: {
         WHERE r.bucket_rank <= 5
         ORDER BY r.bucket_decade DESC, r.count DESC, r.subject_id ASC
         `,
-        [kind, fromCountSourceKey]
+        [kind, fromDayKey]
       )) as TrendSubjectCountRow[];
     }
   }
@@ -2099,8 +2063,7 @@ export async function archiveHotSharesToColdStorage(params?: {
   }
 
   const cleanupBeforeDayKey = toBeijingDayKey(Date.now() - cleanupTrendDays * DAY_MS);
-  const cleanupBeforeHourBucket = toBeijingHourBucket(Date.now() - cleanupTrendDays * DAY_MS);
-  const cleanedDayRows = (await sql.query(
+  const cleanedRows = (await sql.query(
     `
     DELETE FROM ${TREND_COUNT_DAY_TABLE}
     WHERE day_key < $1
@@ -2108,19 +2071,11 @@ export async function archiveHotSharesToColdStorage(params?: {
     `,
     [cleanupBeforeDayKey]
   )) as Array<{ "?column?": number }>;
-  const cleanedHourRows = (await sql.query(
-    `
-    DELETE FROM ${TREND_COUNT_HOUR_TABLE}
-    WHERE hour_bucket < $1
-    RETURNING 1
-    `,
-    [cleanupBeforeHourBucket]
-  )) as Array<{ "?column?": number }>;
 
   return {
     processed: rows.length,
     archived,
     skipped,
-    cleanedTrendRows: cleanedDayRows.length + cleanedHourRows.length,
+    cleanedTrendRows: cleanedRows.length,
   };
 }

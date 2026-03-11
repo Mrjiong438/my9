@@ -14,7 +14,6 @@ const CORE_TABLES = [
   "my9_subject_dim_v1",
   "my9_trend_subject_all_v2",
   "my9_trend_subject_day_v2",
-  "my9_trend_subject_hour_v1",
   "my9_trends_cache_v1",
   "my9_trend_count_all_v1",
   "my9_trend_count_day_v1",

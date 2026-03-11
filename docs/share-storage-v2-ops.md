@@ -42,7 +42,6 @@ Current trend tables are:
 
 - `my9_trend_subject_all_v2`
 - `my9_trend_subject_day_v2`
-- `my9_trend_subject_hour_v1` (used by rolling `24h` query)
 
 They only store `subject_id + count` (no `kind/view/bucket`) to reduce write amplification and table size.
 
@@ -70,7 +69,7 @@ Useful flags:
 - `node scripts/monitor-db-usage.mjs --fail-on=warn` or `--fail-on=critical`
 - `node scripts/monitor-db-usage.mjs --exact-counts` (slower, full table count)
 
-## Cold archive + trend-count cleanup
+## Cold archive + day-count cleanup
 
 ```bash
 node scripts/archive-shares-cold.mjs

@@ -24,7 +24,6 @@ const SHARE_ALIAS_TABLE = "my9_share_alias_v1";
 const SUBJECT_DIM_TABLE = "my9_subject_dim_v1";
 const TREND_COUNT_ALL_TABLE = "my9_trend_subject_all_v2";
 const TREND_COUNT_DAY_TABLE = "my9_trend_subject_day_v2";
-const TREND_COUNT_HOUR_TABLE = "my9_trend_subject_hour_v1";
 const SHARES_V2_KIND_CREATED_IDX = `${SHARES_V2_TABLE}_kind_created_idx`;
 const SHARES_V2_TIER_CREATED_IDX = `${SHARES_V2_TABLE}_tier_created_idx`;
 const SHARE_ALIAS_TARGET_IDX = `${SHARE_ALIAS_TABLE}_target_idx`;
@@ -99,10 +98,6 @@ function toBeijingDayKey(timestampMs) {
   return Number(`${year}${month}${day}`);
 }
 
-function toBeijingHourBucket(timestampMs) {
-  return Math.floor((timestampMs + BEIJING_TZ_OFFSET_MS) / (60 * 60 * 1000));
-}
-
 function toCompactAndSubjects(games) {
   const payload = Array.from({ length: 9 }, () => null);
   const subjects = new Map();
@@ -162,7 +157,6 @@ function createContentHash(kind, creatorName, payload) {
 
 function buildIncrements(payload, createdAt) {
   const dayKey = toBeijingDayKey(createdAt);
-  const hourBucket = toBeijingHourBucket(createdAt);
   const countBySubject = new Map();
 
   for (const slot of payload) {
@@ -172,7 +166,6 @@ function buildIncrements(payload, createdAt) {
 
   return Array.from(countBySubject.entries()).map(([subjectId, count]) => ({
     dayKey,
-    hourBucket,
     subjectId,
     count,
   }));
@@ -271,18 +264,6 @@ async function ensureV2Schema(sql) {
       count BIGINT NOT NULL,
       updated_at BIGINT NOT NULL,
       PRIMARY KEY (day_key, subject_id)
-    )
-    `
-  );
-
-  await sql.query(
-    `
-    CREATE TABLE IF NOT EXISTS ${TREND_COUNT_HOUR_TABLE} (
-      hour_bucket BIGINT NOT NULL,
-      subject_id TEXT NOT NULL,
-      count BIGINT NOT NULL,
-      updated_at BIGINT NOT NULL,
-      PRIMARY KEY (hour_bucket, subject_id)
     )
     `
   );
@@ -463,7 +444,6 @@ async function main() {
         for (const inc of buildIncrements(item.payload, item.createdAt)) {
           trendRows.push({
             day_key: inc.dayKey,
-            hour_bucket: inc.hourBucket,
             subject_id: inc.subjectId,
             count: inc.count,
             updated_at: item.updatedAt,
@@ -576,36 +556,6 @@ async function main() {
         FROM folded
         ON CONFLICT (day_key, subject_id) DO UPDATE SET
           count = ${TREND_COUNT_DAY_TABLE}.count + EXCLUDED.count,
-          updated_at = EXCLUDED.updated_at
-        `,
-        [JSON.stringify(trendRows)]
-      );
-
-      await sql.query(
-        `
-        WITH input_rows AS (
-          SELECT hour_bucket, subject_id, count, updated_at
-          FROM jsonb_to_recordset($1::jsonb) AS t(
-            hour_bucket bigint,
-            subject_id text,
-            count bigint,
-            updated_at bigint
-          )
-        ),
-        folded AS (
-          SELECT
-            hour_bucket,
-            subject_id,
-            SUM(count)::BIGINT AS count,
-            MAX(updated_at)::BIGINT AS updated_at
-          FROM input_rows
-          GROUP BY hour_bucket, subject_id
-        )
-        INSERT INTO ${TREND_COUNT_HOUR_TABLE} (hour_bucket, subject_id, count, updated_at)
-        SELECT hour_bucket, subject_id, count, updated_at
-        FROM folded
-        ON CONFLICT (hour_bucket, subject_id) DO UPDATE SET
-          count = ${TREND_COUNT_HOUR_TABLE}.count + EXCLUDED.count,
           updated_at = EXCLUDED.updated_at
         `,
         [JSON.stringify(trendRows)]

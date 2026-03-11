@@ -8,7 +8,6 @@ import { gunzipSync } from "node:zlib";
 const SHARES_V2_TABLE = "my9_share_registry_v2";
 const TREND_COUNT_ALL_TABLE = "my9_trend_subject_all_v2";
 const TREND_COUNT_DAY_TABLE = "my9_trend_subject_day_v2";
-const TREND_COUNT_HOUR_TABLE = "my9_trend_subject_hour_v1";
 const TRENDS_CACHE_TABLE = "my9_trends_cache_v1";
 const BEIJING_TZ_OFFSET_MS = 8 * 60 * 60 * 1000;
 
@@ -63,10 +62,6 @@ function toBeijingDayKey(timestampMs) {
   const month = String(date.getUTCMonth() + 1).padStart(2, "0");
   const day = String(date.getUTCDate()).padStart(2, "0");
   return Number(`${year}${month}${day}`);
-}
-
-function toBeijingHourBucket(timestampMs) {
-  return Math.floor((timestampMs + BEIJING_TZ_OFFSET_MS) / (60 * 60 * 1000));
 }
 
 function extractSubjectIds(payload) {
@@ -180,7 +175,6 @@ async function main() {
 
   const coldAllCountMap = new Map();
   const coldDayCountMap = new Map();
-  const coldHourCountMap = new Map();
   let recoveredColdRows = 0;
   let skippedColdRows = 0;
 
@@ -191,14 +185,11 @@ async function main() {
         const subjectIds = extractSubjectIds(payload);
         const createdAt = Number(row.created_at || 0);
         const dayKey = toBeijingDayKey(createdAt);
-        const hourBucket = toBeijingHourBucket(createdAt);
 
         for (const subjectId of subjectIds) {
           coldAllCountMap.set(subjectId, (coldAllCountMap.get(subjectId) ?? 0) + 1);
           const dayKeySubjectId = `${dayKey}|${subjectId}`;
           coldDayCountMap.set(dayKeySubjectId, (coldDayCountMap.get(dayKeySubjectId) ?? 0) + 1);
-          const hourBucketSubjectId = `${hourBucket}|${subjectId}`;
-          coldHourCountMap.set(hourBucketSubjectId, (coldHourCountMap.get(hourBucketSubjectId) ?? 0) + 1);
         }
         recoveredColdRows += 1;
       } catch (error) {
@@ -228,19 +219,10 @@ async function main() {
       count,
     };
   });
-  const coldHourRows = Array.from(coldHourCountMap.entries()).map(([key, count]) => {
-    const separatorIndex = key.indexOf("|");
-    return {
-      hour_bucket: Number(key.slice(0, separatorIndex)),
-      subject_id: key.slice(separatorIndex + 1),
-      count,
-    };
-  });
 
   await sql.transaction((txn) => [
     txn`TRUNCATE TABLE ${txn.unsafe(TREND_COUNT_ALL_TABLE)}`,
     txn`TRUNCATE TABLE ${txn.unsafe(TREND_COUNT_DAY_TABLE)}`,
-    txn`TRUNCATE TABLE ${txn.unsafe(TREND_COUNT_HOUR_TABLE)}`,
     txn`TRUNCATE TABLE ${txn.unsafe(TRENDS_CACHE_TABLE)}`,
     txn`
       WITH share_slots AS (
@@ -300,34 +282,6 @@ async function main() {
         updated_at = EXCLUDED.updated_at
     `,
     txn`
-      WITH share_slots AS (
-        SELECT
-          ((s.created_at + ${BEIJING_TZ_OFFSET_MS}::bigint) / 3600000)::BIGINT AS hour_bucket,
-          BTRIM(slot->>'sid') AS subject_id
-        FROM ${txn.unsafe(SHARES_V2_TABLE)} s
-        CROSS JOIN LATERAL jsonb_array_elements(
-          CASE
-            WHEN s.hot_payload IS NULL THEN '[]'::jsonb
-            WHEN jsonb_typeof(s.hot_payload) = 'array' THEN s.hot_payload
-            ELSE '[]'::jsonb
-          END
-        ) AS slot
-        WHERE s.hot_payload IS NOT NULL
-      )
-      INSERT INTO ${txn.unsafe(TREND_COUNT_HOUR_TABLE)} (hour_bucket, subject_id, count, updated_at)
-      SELECT
-        hour_bucket,
-        subject_id,
-        COUNT(*)::BIGINT AS count,
-        ${now}::BIGINT AS updated_at
-      FROM share_slots
-      WHERE subject_id <> ''
-      GROUP BY hour_bucket, subject_id
-      ON CONFLICT (hour_bucket, subject_id) DO UPDATE SET
-        count = EXCLUDED.count,
-        updated_at = EXCLUDED.updated_at
-    `,
-    txn`
       WITH cold_rows AS (
         SELECT r.subject_id, r.count
         FROM jsonb_to_recordset(COALESCE(${JSON.stringify(coldAllRows)}::jsonb, '[]'::jsonb)) AS r(subject_id text, count bigint)
@@ -351,23 +305,10 @@ async function main() {
         count = ${txn.unsafe(TREND_COUNT_DAY_TABLE)}.count + EXCLUDED.count,
         updated_at = EXCLUDED.updated_at
     `,
-    txn`
-      WITH cold_rows AS (
-        SELECT r.hour_bucket, r.subject_id, r.count
-        FROM jsonb_to_recordset(COALESCE(${JSON.stringify(coldHourRows)}::jsonb, '[]'::jsonb)) AS r(hour_bucket bigint, subject_id text, count bigint)
-      )
-      INSERT INTO ${txn.unsafe(TREND_COUNT_HOUR_TABLE)} (hour_bucket, subject_id, count, updated_at)
-      SELECT hour_bucket, subject_id, count, ${now}::bigint
-      FROM cold_rows
-      ON CONFLICT (hour_bucket, subject_id) DO UPDATE SET
-        count = ${txn.unsafe(TREND_COUNT_HOUR_TABLE)}.count + EXCLUDED.count,
-        updated_at = EXCLUDED.updated_at
-    `,
   ]);
 
   const allRows = await sql.query(`SELECT COUNT(*)::BIGINT AS total FROM ${TREND_COUNT_ALL_TABLE}`);
   const dayRows = await sql.query(`SELECT COUNT(*)::BIGINT AS total FROM ${TREND_COUNT_DAY_TABLE}`);
-  const hourRows = await sql.query(`SELECT COUNT(*)::BIGINT AS total FROM ${TREND_COUNT_HOUR_TABLE}`);
 
   console.log(
     JSON.stringify(
@@ -381,7 +322,6 @@ async function main() {
         skippedColdRows,
         allRows: Number(allRows[0]?.total || 0),
         dayRows: Number(dayRows[0]?.total || 0),
-        hourRows: Number(hourRows[0]?.total || 0),
       },
       null,
       2
