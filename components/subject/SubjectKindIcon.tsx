@@ -1,27 +1,30 @@
 "use client";
 
-import { BookOpen, BookText, Clapperboard, Gamepad2, Shapes, Tv } from "lucide-react";
+import { Gamepad2, Tv, Film, BookOpen, BookText, Library } from "lucide-react";
 import { SubjectKind } from "@/lib/subject-kind";
 
-interface SubjectKindIconProps {
-  kind: SubjectKind;
+export function SubjectKindIcon({
+  kind,
+  className,
+}: {
+  kind?: SubjectKind | null;
   className?: string;
-}
-
-export function SubjectKindIcon({ kind, className }: SubjectKindIconProps) {
+}) {
   switch (kind) {
     case "game":
       return <Gamepad2 className={className} />;
     case "anime":
-      return <Clapperboard className={className} />;
+      return <Tv className={className} />;
     case "tv":
       return <Tv className={className} />;
+    case "movie":
+      return <Film className={className} />;
     case "manga":
       return <BookOpen className={className} />;
     case "lightnovel":
       return <BookText className={className} />;
     case "work":
     default:
-      return <Shapes className={className} />;
+      return <Library className={className} />;
   }
 }

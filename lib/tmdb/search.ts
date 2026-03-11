@@ -27,6 +27,29 @@ const TMDB_TV_GENRE_ZH: Record<number, string> = {
   37: "西部",
 };
 
+// TMDB Movie genre 中文映射表
+const TMDB_MOVIE_GENRE_ZH: Record<number, string> = {
+  28: "动作",
+  12: "冒险",
+  16: "动画",
+  35: "喜剧",
+  80: "犯罪",
+  99: "纪录",
+  18: "剧情",
+  10751: "家庭",
+  14: "奇幻",
+  36: "历史",
+  27: "恐怖",
+  10402: "音乐",
+  9648: "悬疑",
+  10749: "爱情",
+  878: "科幻",
+  10770: "电视电影",
+  53: "惊悚",
+  10752: "战争",
+  37: "西部",
+};
+
 // TMDB Search TV API 返回的单个结果
 type TmdbTvResult = {
   id: number;
@@ -44,6 +67,25 @@ type TmdbSearchTvResponse = {
   total_pages: number;
   total_results: number;
   results: TmdbTvResult[];
+};
+
+// TMDB Search Movie API 返回的单个结果
+type TmdbMovieResult = {
+  id: number;
+  title: string;
+  original_title: string;
+  poster_path: string | null;
+  release_date?: string;
+  genre_ids?: number[];
+  overview?: string;
+};
+
+// TMDB Search Movie API 返回的分页结构
+type TmdbSearchMovieResponse = {
+  page: number;
+  total_pages: number;
+  total_results: number;
+  results: TmdbMovieResult[];
 };
 
 function extractYear(raw?: string | null): number | undefined {
@@ -79,6 +121,30 @@ function toShareSubject(result: TmdbTvResult): ShareSubject {
       result.name !== result.original_name ? result.name : undefined,
     cover,
     releaseYear: extractYear(result.first_air_date),
+    genres,
+  };
+}
+
+// 将 TMDB 电影结果转为项目统一的 ShareSubject 类型
+function toShareMovieSubject(result: TmdbMovieResult): ShareSubject {
+  const cover = result.poster_path
+    ? `https://image.tmdb.org/t/p/w500${result.poster_path}`
+    : null;
+
+  const genres = Array.isArray(result.genre_ids)
+    ? result.genre_ids
+        .map((id) => TMDB_MOVIE_GENRE_ZH[id])
+        .filter((name): name is string => Boolean(name))
+        .slice(0, 3)
+    : [];
+
+  return {
+    id: result.id,
+    name: result.original_title,
+    localizedName:
+      result.title !== result.original_title ? result.title : undefined,
+    cover,
+    releaseYear: extractYear(result.release_date),
     genres,
   };
 }
@@ -195,3 +261,47 @@ export async function searchTmdbTv(params: {
 
   return items;
 }
+
+// 调用 TMDB Search Movie API
+export async function searchTmdbMovie(params: {
+  query: string;
+  kind: SubjectKind;
+}): Promise<ShareSubject[]> {
+  const { query } = params;
+  const q = query.trim();
+  if (!q) {
+    return [];
+  }
+
+  if (!TMDB_API_READ_ACCESS_TOKEN) {
+    throw new Error("TMDB_API_READ_ACCESS_TOKEN 未配置");
+  }
+
+  const searchUrl = new URL(`${TMDB_API_BASE_URL}/search/movie`);
+  searchUrl.searchParams.set("query", q);
+  searchUrl.searchParams.set("language", "zh-CN");
+  searchUrl.searchParams.set("page", "1");
+
+  const response = await fetch(searchUrl.toString(), {
+    method: "GET",
+    headers: {
+      Accept: "application/json",
+      Authorization: `Bearer ${TMDB_API_READ_ACCESS_TOKEN}`,
+    },
+    next: { revalidate: 0 },
+  });
+
+  if (!response.ok) {
+    throw new Error(`TMDB search failed: ${response.status}`);
+  }
+
+  const json = (await response.json()) as TmdbSearchMovieResponse;
+  const results = Array.isArray(json?.results) ? json.results : [];
+
+  const items = results
+    .map(toShareMovieSubject)
+    .slice(0, 20);
+
+  return items;
+}
+

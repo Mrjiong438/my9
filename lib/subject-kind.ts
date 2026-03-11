@@ -1,4 +1,4 @@
-export type SubjectKind = "game" | "anime" | "tv" | "manga" | "lightnovel" | "work";
+export type SubjectKind = "game" | "anime" | "tv" | "movie" | "manga" | "lightnovel" | "work";
 
 export const DEFAULT_SUBJECT_KIND: SubjectKind = "game";
 
@@ -6,6 +6,7 @@ export const SUBJECT_KIND_ORDER: SubjectKind[] = [
   "game",
   "anime",
   "tv",
+  "movie",
   "manga",
   "lightnovel",
   "work",
@@ -109,6 +110,19 @@ const KIND_META_MAP: Record<SubjectKind, SubjectKindMeta> = {
     shareTitle: "构成我的九部电视剧",
     draftStorageKey: "my-nine-tv:v1",
     trendLabel: "电视剧",
+    search: {},
+  },
+  movie: {
+    kind: "movie",
+    label: "电影",
+    longLabel: "九部电影",
+    subtitle: "向世界传达你所爱的电影。",
+    searchPlaceholder: "输入电影名称",
+    searchDialogTitle: "搜索电影",
+    searchIdleHint: "输入电影名称开始搜索",
+    shareTitle: "构成我的九部电影",
+    draftStorageKey: "my-nine-movie:v1",
+    trendLabel: "电影",
     search: {},
   },
   work: {

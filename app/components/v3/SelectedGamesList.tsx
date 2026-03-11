@@ -32,7 +32,7 @@ function bangumiLink(game: ShareGame, cat?: number): string {
   return `https://bgm.tv/subject_search/${query}`;
 }
 
-function tmdbLink(game: ShareGame): string {
+function tmdbTvLink(game: ShareGame): string {
   const id = String(game.id || "").trim();
   if (/^\d+$/.test(id)) {
     return `https://www.themoviedb.org/tv/${id}`;
@@ -41,8 +41,18 @@ function tmdbLink(game: ShareGame): string {
   return `https://www.themoviedb.org/search/tv?query=${query}`;
 }
 
+function tmdbMovieLink(game: ShareGame): string {
+  const id = String(game.id || "").trim();
+  if (/^\d+$/.test(id)) {
+    return `https://www.themoviedb.org/movie/${id}`;
+  }
+  const query = encodeURIComponent(displayName(game));
+  return `https://www.themoviedb.org/search/movie?query=${query}`;
+}
+
 function subjectLink(game: ShareGame, kind?: SubjectKind, cat?: number): string {
-  if (kind === "tv") return tmdbLink(game);
+  if (kind === "tv") return tmdbTvLink(game);
+  if (kind === "movie") return tmdbMovieLink(game);
   return bangumiLink(game, cat);
 }
 
