@@ -37,10 +37,22 @@ function applySampleSummary(response: TrendResponse, summary: TrendSampleSummary
   if (!summary) {
     return response;
   }
+
+  const sampleCount = Math.max(response.sampleCount, summary.sampleCount);
+  const rangeFromCandidates = [response.range.from, summary.range.from].filter(
+    (value): value is number => typeof value === "number" && Number.isFinite(value)
+  );
+  const rangeToCandidates = [response.range.to, summary.range.to].filter(
+    (value): value is number => typeof value === "number" && Number.isFinite(value)
+  );
+
   return {
     ...response,
-    sampleCount: summary.sampleCount,
-    range: summary.range,
+    sampleCount,
+    range: {
+      from: rangeFromCandidates.length > 0 ? Math.min(...rangeFromCandidates) : null,
+      to: rangeToCandidates.length > 0 ? Math.max(...rangeToCandidates) : null,
+    },
   };
 }
 
@@ -192,13 +204,16 @@ async function resolveTrendResponseInternal(params: ResolveTrendParams): Promise
 
   const cached = await safeGetTrendsCache(params, false);
   if (cached) {
-    const mergedSampleCount = sampleSummary?.sampleCount ?? cached.sampleCount;
+    const mergedSampleCount = sampleSummary ? Math.max(sampleSummary.sampleCount, cached.sampleCount) : cached.sampleCount;
     const cachedLooksStaleSuppressed = cached.items.length === 0 && mergedSampleCount >= 30;
 
     if (!cachedLooksStaleSuppressed) {
       if (!sampleSummary) {
-        sampleSummary = toSampleSummary(cached);
-        await safeSetTrendSampleSummaryCache(period, kind, sampleSummary);
+        const cachedLooksSuppressedSmallSample = cached.items.length === 0 && cached.sampleCount > 0 && cached.sampleCount < 30;
+        if (!cachedLooksSuppressedSmallSample) {
+          sampleSummary = toSampleSummary(cached);
+          await safeSetTrendSampleSummaryCache(period, kind, sampleSummary);
+        }
       }
       return suppressSmallSamples(applySampleSummary(cached, sampleSummary));
     }
@@ -222,12 +237,9 @@ async function resolveTrendResponseInternal(params: ResolveTrendParams): Promise
     });
 
     if (aggregated) {
-      if (!sampleSummary) {
-        sampleSummary = toSampleSummary(aggregated);
-        await safeSetTrendSampleSummaryCache(period, kind, sampleSummary);
-      }
-
-      const normalized = suppressSmallSamples(applySampleSummary(aggregated, sampleSummary));
+      sampleSummary = toSampleSummary(aggregated);
+      await safeSetTrendSampleSummaryCache(period, kind, sampleSummary);
+      const normalized = suppressSmallSamples(aggregated);
       await safeSetTrendsCache(params, normalized);
       return normalized;
     }
