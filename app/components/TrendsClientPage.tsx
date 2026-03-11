@@ -543,7 +543,7 @@ export default function TrendsClientPage({
 
           {!loading && !error && data && hasInsufficientSamples ? (
             <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-10 text-center text-sm text-slate-600">
-              当前数据不足，请稍后再看
+              服务器爆炸中 请等待恢复……
             </div>
           ) : null}
 
