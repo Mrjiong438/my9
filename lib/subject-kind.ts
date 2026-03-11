@@ -1,10 +1,11 @@
-export type SubjectKind = "game" | "anime" | "manga" | "lightnovel" | "work";
+export type SubjectKind = "game" | "anime" | "tv" | "manga" | "lightnovel" | "work";
 
 export const DEFAULT_SUBJECT_KIND: SubjectKind = "game";
 
 export const SUBJECT_KIND_ORDER: SubjectKind[] = [
   "game",
   "anime",
+  "tv",
   "manga",
   "lightnovel",
   "work",
@@ -96,6 +97,19 @@ const KIND_META_MAP: Record<SubjectKind, SubjectKindMeta> = {
       strictPlatform: "小说",
       bangumiSearchCat: 1,
     },
+  },
+  tv: {
+    kind: "tv",
+    label: "电视剧",
+    longLabel: "九部电视剧",
+    subtitle: "向世界传达你所爱的电视剧。",
+    searchPlaceholder: "输入电视剧名称",
+    searchDialogTitle: "搜索电视剧",
+    searchIdleHint: "输入电视剧名称开始搜索",
+    shareTitle: "构成我的九部电视剧",
+    draftStorageKey: "my-nine-tv:v1",
+    trendLabel: "电视剧",
+    search: {},
   },
   work: {
     kind: "work",

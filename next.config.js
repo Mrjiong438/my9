@@ -24,6 +24,10 @@ const nextConfig = {
         protocol: "https",
         hostname: "img.bgm.tv",
       },
+      {
+        protocol: "https",
+        hostname: "image.tmdb.org",
+      },
     ],
   },
 };
