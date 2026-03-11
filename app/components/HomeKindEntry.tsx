@@ -13,6 +13,7 @@ export default function HomeKindEntry() {
   const optionRefs = useRef<Record<SubjectKind, HTMLButtonElement | null>>({
     game: null,
     anime: null,
+    tv: null,
     manga: null,
     lightnovel: null,
     work: null,

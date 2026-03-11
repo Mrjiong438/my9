@@ -12,9 +12,11 @@ import { cn } from "@/lib/utils";
 import { FaWeibo, FaGithub } from "react-icons/fa";
 import { SiBilibili } from "react-icons/si";
 import { SupportButton } from "@/components/SupportButton";
+import type { SubjectKind } from "@/lib/subject-kind";
 
 interface SiteFooterProps {
   className?: string;
+  kind?: SubjectKind;
 }
 
 function buildTallyEmbedUrl(value: string): string {
@@ -29,7 +31,7 @@ function buildTallyEmbedUrl(value: string): string {
   }
 }
 
-export function SiteFooter({ className }: SiteFooterProps) {
+export function SiteFooter({ className, kind }: SiteFooterProps) {
   const tallyFormUrl =
     process.env.NEXT_PUBLIC_TALLY_FORM_URL?.trim() ||
     process.env.NEXT_PUBLIC_FEEDBACK_TALLY_URL?.trim();
@@ -44,14 +46,25 @@ export function SiteFooter({ className }: SiteFooterProps) {
     >
       <p>
         由{" "}
-        <a
-          href="https://bangumi.tv/"
-          target="_blank"
-          rel="noreferrer"
-          className="font-semibold text-sky-600 hover:underline"
-        >
-          Bangumi
-        </a>
+        {kind === "tv" ? (
+          <a
+            href="https://www.themoviedb.org/"
+            target="_blank"
+            rel="noreferrer"
+            className="font-semibold text-sky-600 hover:underline"
+          >
+            TMDB
+          </a>
+        ) : (
+          <a
+            href="https://bangumi.tv/"
+            target="_blank"
+            rel="noreferrer"
+            className="font-semibold text-sky-600 hover:underline"
+          >
+            Bangumi
+          </a>
+        )}
         {" "}强力驱动
       </p>
       <p className="mt-2">
