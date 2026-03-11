@@ -215,13 +215,14 @@ export default function My9ReadonlyApp({
           games={games}
           subjectLabel={kindMeta.label}
           bangumiSearchCat={kindMeta.search.bangumiSearchCat}
+          kind={kind}
           readOnly
           spoilerExpandedSet={spoilerExpandedSet}
           onToggleSpoiler={handleToggleSpoiler}
           onOpenComment={() => undefined}
         />
 
-        <SiteFooter className="w-full" />
+        <SiteFooter className="w-full" kind={kind} />
       </div>
     </main>
   );

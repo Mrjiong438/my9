@@ -618,7 +618,7 @@ export default function TrendsClientPage({
           ) : null}
         </section>
 
-        <SiteFooter />
+        <SiteFooter kind={kind} />
       </div>
 
       <button

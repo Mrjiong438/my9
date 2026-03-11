@@ -495,7 +495,7 @@ export default function My9V3App({
 
       const nextResponse: SubjectSearchResponse = {
         ok: true,
-        source: "bangumi",
+        source: json.source === "tmdb" ? "tmdb" : "bangumi",
         kind,
         items: Array.isArray(json.items) ? json.items : [],
         topPickIds: Array.isArray(json.topPickIds) ? json.topPickIds : [],
@@ -799,13 +799,14 @@ export default function My9V3App({
           games={games}
           subjectLabel={kindMeta.label}
           bangumiSearchCat={kindMeta.search.bangumiSearchCat}
+          kind={kind}
           readOnly={isReadonly}
           spoilerExpandedSet={spoilerExpandedSet}
           onToggleSpoiler={handleToggleSpoiler}
           onOpenComment={openComment}
         />
 
-        <SiteFooter className="w-full" />
+        <SiteFooter className="w-full" kind={kind} />
       </div>
 
       <SearchDialog
