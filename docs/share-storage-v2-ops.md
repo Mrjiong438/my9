@@ -12,7 +12,7 @@
 - Optional: `MY9_ARCHIVE_OLDER_THAN_DAYS` (default `30`)
 - Optional: `MY9_ARCHIVE_BATCH_SIZE` (default `500`)
 - Optional: `MY9_ARCHIVE_CLEANUP_TREND_DAYS` (default `190`)
-- Optional: `MY9_TRENDS_24H_SOURCE=day|hour` (default `day`, switch to `hour` after hour-window rebuild)
+- Optional: `MY9_TRENDS_24H_SOURCE=day|hour` (default `day`, 24h data source switch on v3 day/hour tables)
 
 ## Migration
 
@@ -37,45 +37,33 @@ Run migration consistency checks (`old`, `v2`, `alias`, `missing`):
 node scripts/verify-shares-v2-migration.mjs
 ```
 
-## Trend table rebuild (subject-grain)
+## Trend table rebuild (kind-grain v3)
 
-Current trend tables are:
+Current online trend tables are:
 
-- `my9_trend_subject_all_v2`
-- `my9_trend_subject_day_v2`
-- `my9_trend_subject_hour_v1` (24h read source when enabled)
+- `my9_trend_subject_kind_all_v3`
+- `my9_trend_subject_kind_day_v3`
+- `my9_trend_subject_kind_hour_v3`
 
-They only store `subject_id + count` (no `kind/view/bucket`) to reduce write amplification and table size.
+They store `kind + subject_id + count` to avoid cross-kind mixed counting.
 
-Rebuild from old trend tables and drop old heavy tables:
-
-```bash
-node scripts/rebuild-trends-subject-v2.mjs
-```
-
-Optional flag:
-
-- `node scripts/rebuild-trends-subject-v2.mjs --reset` (truncate new trend tables before rebuild)
-
-## Initialize 24h hour window table
-
-Before switching 24h query source to hour table:
+Full rebuild from `my9_share_registry_v2.kind + hot_payload`:
 
 ```bash
-node scripts/rebuild-trend-hour-window.mjs
-node scripts/rebuild-trend-hour-window.mjs
+node scripts/rebuild-trends-kind-v3.mjs
 ```
 
-The script rebuilds `my9_trend_subject_hour_v1` by range-replacement for Beijing time window:
+Useful flag:
 
-- from yesterday `00:00`
-- to now
+- `node scripts/rebuild-trends-kind-v3.mjs --now-ms=<timestamp_ms>`
+- `node scripts/rebuild-trends-kind-v3.mjs --max-attempts=30 --lock-timeout-ms=3000`
 
-After initialization is done, set:
+Cutover runbook:
 
-```bash
-MY9_TRENDS_24H_SOURCE=hour
-```
+1. Run rebuild once before switching app read/write to v3.
+2. Deploy app code (trend read/write -> v3).
+3. Run rebuild again immediately to fill deployment gap.
+4. Keep old tables (`my9_trend_subject_all_v2`, `my9_trend_subject_day_v2`, `my9_trend_subject_hour_v1`) for rollback observation, then delete manually after stability.
 
 ## DB usage monitor
 

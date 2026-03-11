@@ -27,12 +27,12 @@ const SHARES_V1_TABLE = "my9_shares_v1";
 const SHARES_V2_TABLE = "my9_share_registry_v2";
 const SHARE_ALIAS_TABLE = "my9_share_alias_v1";
 const SUBJECT_DIM_TABLE = "my9_subject_dim_v1";
-const TREND_COUNT_ALL_TABLE = "my9_trend_subject_all_v2";
-const TREND_COUNT_DAY_TABLE = "my9_trend_subject_day_v2";
-const TREND_COUNT_HOUR_TABLE = "my9_trend_subject_hour_v1";
+const TREND_COUNT_ALL_TABLE = "my9_trend_subject_kind_all_v3";
+const TREND_COUNT_DAY_TABLE = "my9_trend_subject_kind_day_v3";
+const TREND_COUNT_HOUR_TABLE = "my9_trend_subject_kind_hour_v3";
 const TRENDS_CACHE_TABLE = "my9_trends_cache_v1";
-const TRENDS_CACHE_VERSION = "v8";
-const TRENDS_SAMPLE_CACHE_VERSION = "v4";
+const TRENDS_CACHE_VERSION = "v9";
+const TRENDS_SAMPLE_CACHE_VERSION = "v5";
 const SAMPLE_SUMMARY_CACHE_VIEW = "sample";
 const OVERALL_TREND_PAGE_SIZE = 20;
 const GROUPED_BUCKET_LIMIT = 20;
@@ -44,6 +44,7 @@ const SHARES_V2_KIND_CREATED_IDX = `${SHARES_V2_TABLE}_kind_created_idx`;
 const SHARES_V2_TIER_CREATED_IDX = `${SHARES_V2_TABLE}_tier_created_idx`;
 const SHARE_ALIAS_TARGET_IDX = `${SHARE_ALIAS_TABLE}_target_idx`;
 const SUBJECT_DIM_SUBJECT_IDX = `${SUBJECT_DIM_TABLE}_subject_idx`;
+const TREND_COUNT_ALL_KIND_COUNT_IDX = `${TREND_COUNT_ALL_TABLE}_kind_count_idx`;
 const TRENDS_CACHE_EXPIRES_IDX = `${TRENDS_CACHE_TABLE}_expires_idx`;
 
 function readEnv(...names: string[]): string | null {
@@ -376,29 +377,37 @@ async function ensureSchema(): Promise<boolean> {
 
       await sql`
         CREATE TABLE IF NOT EXISTS ${sql.unsafe(TREND_COUNT_ALL_TABLE)} (
-          subject_id TEXT PRIMARY KEY,
+          kind TEXT NOT NULL,
+          subject_id TEXT NOT NULL,
           count BIGINT NOT NULL,
-          updated_at BIGINT NOT NULL
+          updated_at BIGINT NOT NULL,
+          PRIMARY KEY (kind, subject_id)
         )
+      `;
+      await sql`
+        CREATE INDEX IF NOT EXISTS ${sql.unsafe(TREND_COUNT_ALL_KIND_COUNT_IDX)}
+        ON ${sql.unsafe(TREND_COUNT_ALL_TABLE)} (kind, count DESC, subject_id)
       `;
 
       await sql`
         CREATE TABLE IF NOT EXISTS ${sql.unsafe(TREND_COUNT_DAY_TABLE)} (
+          kind TEXT NOT NULL,
           day_key INT NOT NULL,
           subject_id TEXT NOT NULL,
           count BIGINT NOT NULL,
           updated_at BIGINT NOT NULL,
-          PRIMARY KEY (day_key, subject_id)
+          PRIMARY KEY (kind, day_key, subject_id)
         )
       `;
 
       await sql`
         CREATE TABLE IF NOT EXISTS ${sql.unsafe(TREND_COUNT_HOUR_TABLE)} (
+          kind TEXT NOT NULL,
           hour_bucket BIGINT NOT NULL,
           subject_id TEXT NOT NULL,
           count BIGINT NOT NULL,
           updated_at BIGINT NOT NULL,
-          PRIMARY KEY (hour_bucket, subject_id)
+          PRIMARY KEY (kind, hour_bucket, subject_id)
         )
       `;
 
@@ -808,6 +817,7 @@ export async function saveShare(record: StoredShareV1): Promise<{ shareId: strin
       ),
       increment_rows AS (
         SELECT
+          $2::text AS kind,
           i.day_key,
           i.hour_bucket,
           i.subject_id,
@@ -823,28 +833,28 @@ export async function saveShare(record: StoredShareV1): Promise<{ shareId: strin
         WHERE upsert_share.inserted
       ),
       trend_all_upsert AS (
-        INSERT INTO ${TREND_COUNT_ALL_TABLE} (subject_id, count, updated_at)
-        SELECT subject_id, count, updated_at
+        INSERT INTO ${TREND_COUNT_ALL_TABLE} (kind, subject_id, count, updated_at)
+        SELECT kind, subject_id, count, updated_at
         FROM increment_rows
-        ON CONFLICT (subject_id) DO UPDATE SET
+        ON CONFLICT (kind, subject_id) DO UPDATE SET
           count = ${TREND_COUNT_ALL_TABLE}.count + EXCLUDED.count,
           updated_at = EXCLUDED.updated_at
         RETURNING 1
       ),
       trend_day_upsert AS (
-        INSERT INTO ${TREND_COUNT_DAY_TABLE} (day_key, subject_id, count, updated_at)
-        SELECT day_key, subject_id, count, updated_at
+        INSERT INTO ${TREND_COUNT_DAY_TABLE} (kind, day_key, subject_id, count, updated_at)
+        SELECT kind, day_key, subject_id, count, updated_at
         FROM increment_rows
-        ON CONFLICT (day_key, subject_id) DO UPDATE SET
+        ON CONFLICT (kind, day_key, subject_id) DO UPDATE SET
           count = ${TREND_COUNT_DAY_TABLE}.count + EXCLUDED.count,
           updated_at = EXCLUDED.updated_at
         RETURNING 1
       ),
       trend_hour_upsert AS (
-        INSERT INTO ${TREND_COUNT_HOUR_TABLE} (hour_bucket, subject_id, count, updated_at)
-        SELECT hour_bucket, subject_id, count, updated_at
+        INSERT INTO ${TREND_COUNT_HOUR_TABLE} (kind, hour_bucket, subject_id, count, updated_at)
+        SELECT kind, hour_bucket, subject_id, count, updated_at
         FROM increment_rows
-        ON CONFLICT (hour_bucket, subject_id) DO UPDATE SET
+        ON CONFLICT (kind, hour_bucket, subject_id) DO UPDATE SET
           count = ${TREND_COUNT_HOUR_TABLE}.count + EXCLUDED.count,
           updated_at = EXCLUDED.updated_at
         RETURNING 1
@@ -1391,7 +1401,8 @@ export async function getAggregatedTrendResponse(params: {
         `
         SELECT c.subject_id, c.count, d.name, d.localized_name, d.cover, d.release_year, NULL::jsonb AS genres
         FROM ${TREND_COUNT_ALL_TABLE} c
-        JOIN ${SUBJECT_DIM_TABLE} d ON d.subject_id = c.subject_id AND d.kind = $1
+        JOIN ${SUBJECT_DIM_TABLE} d ON d.subject_id = c.subject_id AND d.kind = c.kind
+        WHERE c.kind = $1
         ORDER BY c.count DESC
         LIMIT ${OVERALL_TREND_PAGE_SIZE}
         OFFSET $2
@@ -1404,7 +1415,8 @@ export async function getAggregatedTrendResponse(params: {
         WITH subject_counts AS (
           SELECT c.subject_id, c.count, d.name, d.localized_name, d.cover, d.release_year, d.genres
           FROM ${TREND_COUNT_ALL_TABLE} c
-          JOIN ${SUBJECT_DIM_TABLE} d ON d.subject_id = c.subject_id AND d.kind = $1
+          JOIN ${SUBJECT_DIM_TABLE} d ON d.subject_id = c.subject_id AND d.kind = c.kind
+          WHERE c.kind = $1
         ),
         expanded AS (
           SELECT
@@ -1475,8 +1487,9 @@ export async function getAggregatedTrendResponse(params: {
         WITH subject_counts AS (
           SELECT c.subject_id, c.count
           FROM ${TREND_COUNT_ALL_TABLE} c
-          JOIN ${SUBJECT_DIM_TABLE} d ON d.subject_id = c.subject_id AND d.kind = $1
+          JOIN ${SUBJECT_DIM_TABLE} d ON d.subject_id = c.subject_id AND d.kind = c.kind
           WHERE d.release_year IS NOT NULL
+            AND c.kind = $1
             AND ${yearFilterCondition}
         ),
         ranked AS (
@@ -1517,8 +1530,9 @@ export async function getAggregatedTrendResponse(params: {
         WITH subject_counts AS (
           SELECT c.subject_id, c.count
           FROM ${TREND_COUNT_ALL_TABLE} c
-          JOIN ${SUBJECT_DIM_TABLE} d ON d.subject_id = c.subject_id AND d.kind = $1
+          JOIN ${SUBJECT_DIM_TABLE} d ON d.subject_id = c.subject_id AND d.kind = c.kind
           WHERE d.release_year IS NOT NULL
+            AND c.kind = $1
         ),
         ranked AS (
           SELECT
@@ -1562,8 +1576,9 @@ export async function getAggregatedTrendResponse(params: {
             c.subject_id,
             SUM(c.count)::BIGINT AS count
           FROM ${countSourceTable} c
-          JOIN ${SUBJECT_DIM_TABLE} d ON d.subject_id = c.subject_id AND d.kind = $1
+          JOIN ${SUBJECT_DIM_TABLE} d ON d.subject_id = c.subject_id AND d.kind = c.kind
           WHERE c.${countSourceTimeColumn} >= $2
+            AND c.kind = $1
           GROUP BY c.subject_id
           ORDER BY SUM(c.count) DESC
           LIMIT ${OVERALL_TREND_PAGE_SIZE}
@@ -1589,8 +1604,9 @@ export async function getAggregatedTrendResponse(params: {
             d.release_year,
             d.genres
           FROM ${countSourceTable} c
-          JOIN ${SUBJECT_DIM_TABLE} d ON d.subject_id = c.subject_id AND d.kind = $1
+          JOIN ${SUBJECT_DIM_TABLE} d ON d.subject_id = c.subject_id AND d.kind = c.kind
           WHERE c.${countSourceTimeColumn} >= $2
+            AND c.kind = $1
           GROUP BY c.subject_id, d.name, d.localized_name, d.cover, d.release_year, d.genres
         ),
         expanded AS (
@@ -1664,8 +1680,9 @@ export async function getAggregatedTrendResponse(params: {
             c.subject_id,
             SUM(c.count)::BIGINT AS count
           FROM ${countSourceTable} c
-          JOIN ${SUBJECT_DIM_TABLE} d ON d.subject_id = c.subject_id AND d.kind = $1
+          JOIN ${SUBJECT_DIM_TABLE} d ON d.subject_id = c.subject_id AND d.kind = c.kind
           WHERE c.${countSourceTimeColumn} >= $2
+            AND c.kind = $1
             AND d.release_year IS NOT NULL
             AND ${yearFilterCondition}
           GROUP BY c.subject_id
@@ -1710,8 +1727,9 @@ export async function getAggregatedTrendResponse(params: {
             c.subject_id,
             SUM(c.count)::BIGINT AS count
           FROM ${countSourceTable} c
-          JOIN ${SUBJECT_DIM_TABLE} d ON d.subject_id = c.subject_id AND d.kind = $1
+          JOIN ${SUBJECT_DIM_TABLE} d ON d.subject_id = c.subject_id AND d.kind = c.kind
           WHERE c.${countSourceTimeColumn} >= $2
+            AND c.kind = $1
             AND d.release_year IS NOT NULL
           GROUP BY c.subject_id
         ),

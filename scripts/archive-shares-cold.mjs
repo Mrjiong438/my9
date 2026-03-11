@@ -6,8 +6,8 @@ import { resolve } from "node:path";
 import { gzipSync } from "node:zlib";
 
 const SHARES_V2_TABLE = "my9_share_registry_v2";
-const TREND_COUNT_DAY_TABLE = "my9_trend_subject_day_v2";
-const TREND_COUNT_HOUR_TABLE = "my9_trend_subject_hour_v1";
+const TREND_COUNT_DAY_TABLE = "my9_trend_subject_kind_day_v3";
+const TREND_COUNT_HOUR_TABLE = "my9_trend_subject_kind_hour_v3";
 
 function loadLocalEnvFiles() {
   const candidates = [".env.local", ".env"];

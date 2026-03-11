@@ -15,6 +15,7 @@ import { InlineToast, ToastKind } from "@/app/components/v3/InlineToast";
 import { NineGridBoard } from "@/app/components/v3/NineGridBoard";
 import { SearchDialog } from "@/app/components/v3/SearchDialog";
 import { SelectedGamesList } from "@/app/components/v3/SelectedGamesList";
+import { SupportButton } from "@/components/SupportButton";
 import {
   SUBJECT_KIND_ORDER,
   SubjectKind,
@@ -715,6 +716,7 @@ export default function My9V3App({
             <span className="text-red-500">(New!)</span>
           </button>
           <p className="text-sm text-yellow-500">3月11日16时56分开始的服务器崩溃已于17时38分修复！如果途中遭遇炸服可重新尝试生成。</p>
+          <SupportButton/>
         </header>
 
         {toast ? (
