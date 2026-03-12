@@ -117,7 +117,15 @@ function toTmdbMovieLink(subjectId: string | undefined, name: string): string {
   return `https://www.themoviedb.org/search/movie?query=${query}`;
 }
 
+function toAppleMusicSearchLink(name: string): string {
+  const query = encodeURIComponent(name.trim());
+  return `https://music.apple.com/cn/search?term=${query}`;
+}
+
 function toSubjectLink(kind: SubjectKind, subjectId: string | undefined, name: string): string {
+  if (kind === "song" || kind === "album") {
+    return toAppleMusicSearchLink(name);
+  }
   if (kind === "tv") {
     return toTmdbTvLink(subjectId, name);
   }
@@ -128,6 +136,9 @@ function toSubjectLink(kind: SubjectKind, subjectId: string | undefined, name: s
 }
 
 function subjectSourceLabel(kind: SubjectKind): string {
+  if (kind === "song" || kind === "album") {
+    return "Apple Music";
+  }
   if (kind === "tv" || kind === "movie") {
     return "TMDB";
   }
