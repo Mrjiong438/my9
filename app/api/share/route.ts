@@ -23,6 +23,23 @@ function sanitizeString(value: unknown): string {
   return value.trim();
 }
 
+function sanitizeHttpUrl(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+
+  try {
+    const parsed = new URL(trimmed);
+    const protocol = parsed.protocol.toLowerCase();
+    if (protocol !== "http:" && protocol !== "https:") {
+      return null;
+    }
+    return parsed.toString();
+  } catch {
+    return null;
+  }
+}
+
 function toRecord(value: unknown): Record<string, unknown> | null {
   if (!value || typeof value !== "object") return null;
   return value as Record<string, unknown>;
@@ -64,8 +81,9 @@ function sanitizeGame(input: unknown): ShareGame | null {
     storeUrlsRaw && typeof storeUrlsRaw === "object"
       ? (Object.fromEntries(
           Object.entries(storeUrlsRaw)
-            .filter(([k, v]) => typeof k === "string" && typeof v === "string" && String(v).trim())
-            .map(([k, v]) => [k, sanitizeString(v)])
+            .filter(([k]) => typeof k === "string")
+            .map(([k, v]) => [k, sanitizeHttpUrl(v)])
+            .filter((entry): entry is [string, string] => Boolean(entry[1]))
         ) as Record<string, string>)
       : undefined;
 
