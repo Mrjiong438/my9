@@ -64,7 +64,7 @@ function toShareSongSubject(result: ItunesTrackResult): ShareSubject {
     releaseYear,
     genres,
     storeUrls: {
-      apple: result.collectionViewUrl || result.trackViewUrl || "",
+      apple: result.trackViewUrl || result.collectionViewUrl || "",
     },
   };
 }
