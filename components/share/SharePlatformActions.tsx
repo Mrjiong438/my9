@@ -1,11 +1,17 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { ShareImagePreviewDialog } from "@/components/share/ShareImagePreviewDialog";
-import { ShareLinkDialog } from "@/components/share/ShareLinkDialog";
 import { SubjectKind, getSubjectKindMeta } from "@/lib/subject-kind";
 import { ShareGame } from "@/lib/share/types";
+
+const ShareImagePreviewDialog = dynamic(
+  () => import("@/components/share/ShareImagePreviewDialog").then((mod) => mod.ShareImagePreviewDialog)
+);
+const ShareLinkDialog = dynamic(
+  () => import("@/components/share/ShareLinkDialog").then((mod) => mod.ShareLinkDialog)
+);
 
 type NoticeKind = "success" | "error" | "info";
 
@@ -14,7 +20,7 @@ interface SharePlatformActionsProps {
   shareId: string | null;
   games: Array<ShareGame | null>;
   creatorName?: string | null;
-  onNotice: (kind: NoticeKind, message: string) => void;
+  onNotice?: (kind: NoticeKind, message: string) => void;
 }
 
 export function SharePlatformActions({
@@ -38,6 +44,10 @@ export function SharePlatformActions({
     if (!name) return kindMeta.shareTitle;
     return kindMeta.shareTitle.replace("我", name);
   }, [creatorName, kindMeta.shareTitle]);
+
+  function handleNotice(kindValue: NoticeKind, message: string) {
+    onNotice?.(kindValue, message);
+  }
 
   const disabled = !shareId;
 
@@ -72,7 +82,7 @@ export function SharePlatformActions({
         生成分享链接
       </Button>
 
-      {shareId ? (
+      {shareId && previewOpen ? (
         <ShareImagePreviewDialog
           open={previewOpen}
           onOpenChange={setPreviewOpen}
@@ -81,15 +91,15 @@ export function SharePlatformActions({
           title={shareTitle}
           games={games}
           creatorName={creatorName}
-          onNotice={onNotice}
+          onNotice={handleNotice}
         />
       ) : null}
-      {shareUrl ? (
+      {shareUrl && linkDialogOpen ? (
         <ShareLinkDialog
           open={linkDialogOpen}
           onOpenChange={setLinkDialogOpen}
           shareUrl={shareUrl}
-          onNotice={onNotice}
+          onNotice={handleNotice}
         />
       ) : null}
     </div>

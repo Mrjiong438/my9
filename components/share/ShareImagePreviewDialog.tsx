@@ -53,6 +53,16 @@ export function ShareImagePreviewDialog({
   const [previewBlob, setPreviewBlob] = useState<Blob | null>(null);
   const [previewError, setPreviewError] = useState("");
   const requestIdRef = useRef(0);
+  const previewUrlRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (previewUrlRef.current) {
+        URL.revokeObjectURL(previewUrlRef.current);
+        previewUrlRef.current = null;
+      }
+    };
+  }, []);
 
   useEffect(() => {
     if (!open) {
@@ -63,6 +73,7 @@ export function ShareImagePreviewDialog({
       setPreviewError("");
       setPreviewUrl((prev) => {
         if (prev) URL.revokeObjectURL(prev);
+        previewUrlRef.current = null;
         return null;
       });
       return;
@@ -93,6 +104,7 @@ export function ShareImagePreviewDialog({
         setPreviewBlob(blob);
         setPreviewUrl((prev) => {
           if (prev) URL.revokeObjectURL(prev);
+          previewUrlRef.current = nextUrl;
           return nextUrl;
         });
       } catch {
@@ -101,6 +113,7 @@ export function ShareImagePreviewDialog({
         setPreviewError("图片生成失败，请稍后重试");
         setPreviewUrl((prev) => {
           if (prev) URL.revokeObjectURL(prev);
+          previewUrlRef.current = null;
           return null;
         });
       } finally {

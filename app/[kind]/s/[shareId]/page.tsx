@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { notFound, permanentRedirect, redirect } from "next/navigation";
-import My9ReadonlyApp, { type InitialReadonlyShareData } from "@/app/components/My9ReadonlyApp";
+import My9ReadonlyApp from "@/app/components/My9ReadonlyApp";
+import My9ReadonlyPage, { type InitialReadonlyShareData } from "@/app/components/My9ReadonlyPage";
 import { isCanonicalShareId, normalizeShareId } from "@/lib/share/id";
 import { getShare } from "@/lib/share/storage";
 import { getSubjectKindMeta, parseSubjectKind } from "@/lib/subject-kind";
@@ -57,11 +58,9 @@ export default async function ShareReadonlyPage({
     initialShareData = null;
   }
 
-  return (
-    <My9ReadonlyApp
-      kind={kind}
-      initialShareId={shareId}
-      initialShareData={initialShareData}
-    />
-  );
+  if (!initialShareData) {
+    return <My9ReadonlyApp kind={kind} initialShareId={shareId} initialShareData={null} />;
+  }
+
+  return <My9ReadonlyPage kind={kind} shareId={shareId} initialShareData={initialShareData} />;
 }

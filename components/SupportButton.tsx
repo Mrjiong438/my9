@@ -17,6 +17,11 @@ const donationAcknowledgements: Array<{
   amount: string;
   message: string;
 }> = [
+  { date: "2026-03-12", name: "许喆隆", amount: "3", message: "" },
+  { date: "2026-03-12", name: "太阳即为正義", amount: "3", message: "DITF国家队天下第一" },
+  { date: "2026-03-12", name: "妍子", amount: "10", message: "" },
+  { date: "2026-03-12", name: "Ying", amount: "100", message: "请加微信号*** 谢谢" },
+  { date: "2026-03-12", name: "匿名", amount: "20", message: "老大谢谢喵" },
   { date: "2026-03-12", name: "梦游到老地方", amount: "10", message: "好全的库 非常感谢" },
   { date: "2026-03-12", name: "匿名", amount: "3", message: "" },
   { date: "2026-03-12", name: "森", amount: "3", message: "" },
