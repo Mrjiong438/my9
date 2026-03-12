@@ -17,6 +17,7 @@ const donationAcknowledgements: Array<{
   amount: string;
   message: string;
 }> = [
+  { date: "2026-03-13", name: "玮鸿", amount: "8.88", message: "感谢作者赞美作者！前两天刚留言说想要电影和音乐的九宫格" },
   { date: "2026-03-12", name: "游戏者幻游", amount: "3", message: "6" },
   { date: "2026-03-12", name: "Mason", amount: "3", message: "" },
   { date: "2026-03-12", name: "匿名", amount: "6", message: "用来做记录真的太好了🥹" },
@@ -203,6 +204,49 @@ export function SupportButton() {
                 ))}
               </tbody>
             </table>
+          </div>
+
+          <div className="mt-4 border-t border-border pt-4">
+            <h4 className="text-sm font-semibold text-foreground">特别鸣谢</h4>
+            <p className="mt-1 text-sm text-muted-foreground">感谢以下开发者对核心功能演进的贡献：</p>
+            <ul className="mt-2 space-y-1.5 text-sm text-muted-foreground">
+              <li>
+                感谢{" "}
+                <a
+                  href="https://github.com/maxchang3"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="font-semibold text-sky-600 underline decoration-sky-300 underline-offset-2 hover:text-sky-700 dark:text-sky-400 dark:decoration-sky-500 dark:hover:text-sky-300"
+                >
+                  @maxchang3
+                </a>{" "}
+                贡献卡片拖拽功能。
+              </li>
+              <li>
+                感谢{" "}
+                <a
+                  href="https://github.com/MiQieR"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="font-semibold text-sky-600 underline decoration-sky-300 underline-offset-2 hover:text-sky-700 dark:text-sky-400 dark:decoration-sky-500 dark:hover:text-sky-300"
+                >
+                  @MiQieR
+                </a>{" "}
+                贡献电影/电视剧查询功能。
+              </li>
+              <li>
+                感谢{" "}
+                <a
+                  href="https://github.com/wanshuai12138"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="font-semibold text-sky-600 underline decoration-sky-300 underline-offset-2 hover:text-sky-700 dark:text-sky-400 dark:decoration-sky-500 dark:hover:text-sky-300"
+                >
+                  @wanshuai12138
+                </a>{" "}
+                贡献单曲/专辑查询功能。
+              </li>
+            </ul>
           </div>
         </section>
       </DialogContent>

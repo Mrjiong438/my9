@@ -3,8 +3,9 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowUp, Globe } from "lucide-react";
+import { ArrowUp, ChevronsUpDown, Globe } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { SubjectKindIcon } from "@/components/subject/SubjectKindIcon";
 import { SiteFooter } from "@/components/layout/SiteFooter";
 import { SupportButton } from "@/components/SupportButton";
@@ -362,6 +363,7 @@ export default function TrendsClientPage({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(initialError);
   const [showTopFab, setShowTopFab] = useState(false);
+  const [kindPickerOpen, setKindPickerOpen] = useState(false);
   const skipFirstEffectRef = useRef(!shouldRefetchOnMount);
   const trendsClientCacheRef = useRef<Map<string, TrendsClientCacheEntry>>(new Map());
   const trendsRequestAbortRef = useRef<AbortController | null>(null);
@@ -573,6 +575,12 @@ export default function TrendsClientPage({
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
+  function switchKind(nextKind: SubjectKind) {
+    setKindPickerOpen(false);
+    if (nextKind === kind) return;
+    setKind(nextKind);
+  }
+
   return (
     <main className="min-h-screen bg-background text-foreground">
       <section className="w-full border-b border-border bg-card shadow-sm">
@@ -599,8 +607,21 @@ export default function TrendsClientPage({
               <p className="text-xs text-muted-foreground">最后更新：{formatDateTime(data?.lastUpdatedAt ?? null)}</p>
             </div>
 
-            <div className="space-y-2 flex flex-col items-start sm:items-end mt-auto">
-              <div ref={kindTabsScrollerRef} className="w-full max-w-full overflow-x-auto">
+            <div className="mt-auto flex flex-col items-end space-y-2">
+              <div className="self-end md:hidden">
+                <button
+                  type="button"
+                  onClick={() => setKindPickerOpen(true)}
+                  className="inline-flex h-8 items-center justify-center gap-1.5 rounded-full border border-border bg-card px-2.5 text-xs font-semibold text-card-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+                  aria-label="切换观测类别"
+                >
+                  <SubjectKindIcon kind={kind} className="h-3.5 w-3.5" />
+                  {getSubjectKindMeta(kind).label}
+                  <ChevronsUpDown className="h-3.5 w-3.5 text-muted-foreground" />
+                </button>
+              </div>
+
+              <div ref={kindTabsScrollerRef} className="hidden w-full max-w-full overflow-x-auto md:block">
                 <div className="inline-flex min-w-max overflow-hidden rounded-full border border-border bg-card">
                   {SUBJECT_KIND_ORDER.map((option) => {
                     const optionMeta = getSubjectKindMeta(option);
@@ -627,7 +648,7 @@ export default function TrendsClientPage({
                 </div>
               </div>
 
-              <div className="overflow-x-auto sm:overflow-visible">
+              <div className="self-end overflow-x-auto md:overflow-visible">
                 <div className="inline-flex overflow-hidden rounded-full border border-border bg-card">
                   {PERIOD_OPTIONS.map((option) => {
                     const disabled = isPeriodDisabled(option, nowMs);
@@ -806,6 +827,35 @@ export default function TrendsClientPage({
 
         <SiteFooter kind={kind} />
       </div>
+
+      <Dialog open={kindPickerOpen} onOpenChange={setKindPickerOpen}>
+        <DialogContent className="w-[86vw] max-w-[21rem] rounded-2xl p-4 sm:max-w-md sm:p-6">
+          <DialogHeader>
+            <DialogTitle>切换观测类别</DialogTitle>
+          </DialogHeader>
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            {SUBJECT_KIND_ORDER.map((item) => {
+              const meta = getSubjectKindMeta(item);
+              const active = item === kind;
+              return (
+                <Button
+                  key={item}
+                  type="button"
+                  variant="outline"
+                  onClick={() => switchKind(item)}
+                  className={cn(
+                    "h-auto justify-start gap-3 rounded-xl px-4 py-3 text-left",
+                    active && "border-sky-300 bg-sky-50 text-sky-700 dark:border-sky-800 dark:bg-sky-950/50 dark:text-sky-200"
+                  )}
+                >
+                  <SubjectKindIcon kind={item} className="h-4 w-4" />
+                  <span className="font-semibold">{meta.label}</span>
+                </Button>
+              );
+            })}
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <button
         type="button"

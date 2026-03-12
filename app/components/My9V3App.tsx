@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { ChevronsUpDown } from "lucide-react";
+import { ChevronRight, ChevronsUpDown } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { SharePlatformActions } from "@/components/share/SharePlatformActions";
 import { SiteFooter } from "@/components/layout/SiteFooter";
@@ -742,7 +742,7 @@ export default function My9V3App({
             onClick={() => router.push(`/trends?kind=${kind}`)}
           >
             大家的构成
-            <span className="text-red-500">(New!)</span>
+            <ChevronRight className="h-4 w-4 text-sky-500 dark:text-sky-300" aria-hidden="true" />
           </button>
           <p className="text-sm text-amber-600 dark:text-amber-400">现已追加电影/电视剧/单曲/专辑的支持！</p>
           <SupportButton/>

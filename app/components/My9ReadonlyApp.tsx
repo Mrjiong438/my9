@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { ChevronRight } from "lucide-react";
 import { SharePlatformActions } from "@/components/share/SharePlatformActions";
 import { SiteFooter } from "@/components/layout/SiteFooter";
 import { InlineToast, ToastKind } from "@/app/components/v3/InlineToast";
@@ -163,7 +164,7 @@ export default function My9ReadonlyApp({
             onClick={() => router.push(`/trends?kind=${kind}`)}
           >
             大家的构成
-            <span className="text-red-500">(New!)</span>
+            <ChevronRight className="h-4 w-4 text-sky-500 dark:text-sky-300" aria-hidden="true" />
           </button>
         </header>
 
