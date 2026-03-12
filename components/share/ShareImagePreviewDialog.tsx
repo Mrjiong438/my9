@@ -17,7 +17,7 @@ import {
   generateStandardShareImageBlob,
   generateEnhancedShareImageBlob,
 } from "@/utils/image/exportShareImage";
-import { SubjectKind } from "@/lib/subject-kind";
+import { getSubjectKindMeta, SubjectKind } from "@/lib/subject-kind";
 
 type NoticeKind = "success" | "error" | "info";
 
@@ -32,8 +32,10 @@ interface ShareImagePreviewDialogProps {
   onNotice: (kind: NoticeKind, message: string) => void;
 }
 
-function buildFileName(title: string) {
-  return `${title || "构成我的九部"}.png`;
+function buildFileName(kind: SubjectKind, title: string) {
+  const { label } = getSubjectKindMeta(kind);
+  const prefix = kind === "character" ? "构成我的九个" : kind === "person" ? "构成我的九位" : "构成我的九部";
+  return `${title || `${prefix}${label}`}.png`;
 }
 
 export function ShareImagePreviewDialog({
@@ -140,7 +142,7 @@ export function ShareImagePreviewDialog({
               showNames,
             })
           : await generateStandardShareImageBlob({ games, creatorName, showNames }));
-      downloadBlob(blob, buildFileName(title));
+      downloadBlob(blob, buildFileName(kind, title));
     } catch {
       onNotice("info", "下载失败，请长按预览图保存");
     }

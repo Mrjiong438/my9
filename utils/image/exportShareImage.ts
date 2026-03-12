@@ -407,6 +407,8 @@ export async function exportEnhancedShareImage(options: {
   showNames?: boolean;
 }) {
   const blob = await generateEnhancedShareImageBlob(options);
-  const fileName = `${options.title || "构成我的九部"}.png`;
+  const { label } = getSubjectKindMeta(options.kind);
+  const prefix = options.kind === "character" ? "构成我的九个" : options.kind === "person" ? "构成我的九位" : "构成我的九部";
+  const fileName = `${options.title || `${prefix}${label}`}.png`;
   downloadBlob(blob, fileName);
 }

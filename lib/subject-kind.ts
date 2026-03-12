@@ -1,4 +1,15 @@
-export type SubjectKind = "game" | "anime" | "tv" | "movie" | "manga" | "lightnovel" | "work" | "song" | "album";
+export type SubjectKind =
+  | "game"
+  | "anime"
+  | "tv"
+  | "movie"
+  | "manga"
+  | "lightnovel"
+  | "work"
+  | "song"
+  | "album"
+  | "character"
+  | "person";
 
 export const DEFAULT_SUBJECT_KIND: SubjectKind = "game";
 
@@ -12,6 +23,8 @@ export const SUBJECT_KIND_ORDER: SubjectKind[] = [
   "song",
   "album",
   "work",
+  "character",
+  "person",
 ];
 
 type KindSearchConfig = {
@@ -164,6 +177,32 @@ const KIND_META_MAP: Record<SubjectKind, SubjectKindMeta> = {
     searchIdleHint: "输入专辑名称开始搜索",
     draftStorageKey: "my-nine-album:v1",
     trendLabel: "专辑",
+    search: {},
+  },
+  character: {
+    kind: "character",
+    label: "角色",
+    longLabel: "九个角色",
+    selectionUnit: "个",
+    subtitle: "向世界传达你所爱的角色。",
+    searchPlaceholder: "输入角色名称",
+    searchDialogTitle: "搜索角色",
+    searchIdleHint: "输入角色名称开始搜索",
+    draftStorageKey: "my-nine-character:v1",
+    trendLabel: "角色",
+    search: {},
+  },
+  person: {
+    kind: "person",
+    label: "人物",
+    longLabel: "九位人物",
+    selectionUnit: "位",
+    subtitle: "向世界传达你所爱的人物。",
+    searchPlaceholder: "输入人物名称",
+    searchDialogTitle: "搜索人物",
+    searchIdleHint: "输入人物名称开始搜索",
+    draftStorageKey: "my-nine-person:v1",
+    trendLabel: "人物",
     search: {},
   },
 };

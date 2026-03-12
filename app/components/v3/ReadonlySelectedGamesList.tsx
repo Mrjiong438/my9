@@ -27,6 +27,22 @@ function bangumiLink(game: ShareGame, cat?: number): string {
   return `https://bgm.tv/subject_search/${query}`;
 }
 
+function bangumiCharacterLink(game: ShareGame): string {
+  const id = String(game.id || "").trim();
+  if (/^\d+$/.test(id)) {
+    return `https://bgm.tv/character/${id}`;
+  }
+  return `https://bgm.tv/search/mono_character/${encodeURIComponent(displayName(game))}`;
+}
+
+function bangumiPersonLink(game: ShareGame): string {
+  const id = String(game.id || "").trim();
+  if (/^\d+$/.test(id)) {
+    return `https://bgm.tv/person/${id}`;
+  }
+  return `https://bgm.tv/search/mono_person/${encodeURIComponent(displayName(game))}`;
+}
+
 function tmdbTvLink(game: ShareGame): string {
   const id = String(game.id || "").trim();
   if (/^\d+$/.test(id)) {
@@ -59,6 +75,8 @@ function subjectLink(game: ShareGame, kind?: SubjectKind, cat?: number): string 
   }
   if (kind === "tv") return tmdbTvLink(game);
   if (kind === "movie") return tmdbMovieLink(game);
+  if (kind === "character") return bangumiCharacterLink(game);
+  if (kind === "person") return bangumiPersonLink(game);
   return bangumiLink(game, cat);
 }
 

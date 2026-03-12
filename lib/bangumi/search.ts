@@ -40,6 +40,51 @@ type BangumiV0PagedSubject = {
   data?: BangumiV0Subject[];
 };
 
+type BangumiV0CharacterImages = {
+  large?: string;
+  medium?: string;
+  small?: string;
+  grid?: string;
+};
+
+type BangumiV0Character = {
+  id: number;
+  name: string;
+  type?: number;
+  images?: BangumiV0CharacterImages | null;
+  short_summary?: string;
+};
+
+type BangumiV0PagedCharacter = {
+  total?: number;
+  limit?: number;
+  offset?: number;
+  data?: BangumiV0Character[];
+};
+
+type BangumiV0PersonImages = {
+  large?: string;
+  medium?: string;
+  small?: string;
+  grid?: string;
+};
+
+type BangumiV0Person = {
+  id: number;
+  name: string;
+  type?: number;
+  images?: BangumiV0PersonImages | null;
+  short_summary?: string;
+  career?: string[];
+};
+
+type BangumiV0PagedPerson = {
+  total?: number;
+  limit?: number;
+  offset?: number;
+  data?: BangumiV0Person[];
+};
+
 function extractYear(raw?: string | null): number | undefined {
   if (!raw) return undefined;
   const year = Number.parseInt(raw.slice(0, 4), 10);
@@ -227,14 +272,7 @@ export async function searchBangumiSubjects(
 
   const response = await fetch(`${BANGUMI_API_BASE_URL}/v0/search/subjects?limit=20`, {
     method: "POST",
-    headers: {
-      "User-Agent": BANGUMI_USER_AGENT || "My9/4.0",
-      Accept: "application/json",
-      "Content-Type": "application/json",
-      ...(BANGUMI_ACCESS_TOKEN
-        ? { Authorization: `Bearer ${BANGUMI_ACCESS_TOKEN}` }
-        : {}),
-    },
+    headers: toBangumiRequestHeaders(),
     body: JSON.stringify(requestBody),
     next: { revalidate: 0 },
   });
@@ -254,4 +292,88 @@ export async function searchBangumiSubjects(
   items = filterBlockedSubjects(items);
 
   return items.slice(0, 20);
+}
+
+function toBangumiRequestHeaders() {
+  return {
+    "User-Agent": BANGUMI_USER_AGENT || "My9/4.0",
+    Accept: "application/json",
+    "Content-Type": "application/json",
+    ...(BANGUMI_ACCESS_TOKEN ? { Authorization: `Bearer ${BANGUMI_ACCESS_TOKEN}` } : {}),
+  };
+}
+
+function toShareSubjectFromCharacter(item: BangumiV0Character): ShareSubject {
+  const cover =
+    item.images?.large ||
+    item.images?.medium ||
+    item.images?.small ||
+    item.images?.grid ||
+    null;
+  return {
+    id: item.id,
+    name: item.name,
+    localizedName: undefined,
+    cover,
+    subjectType: item.type,
+  };
+}
+
+function toShareSubjectFromPerson(item: BangumiV0Person): ShareSubject {
+  const cover =
+    item.images?.large ||
+    item.images?.medium ||
+    item.images?.small ||
+    item.images?.grid ||
+    null;
+  return {
+    id: item.id,
+    name: item.name,
+    localizedName: undefined,
+    cover,
+    genres: Array.isArray(item.career) ? item.career.slice(0, 3) : [],
+    subjectType: item.type,
+  };
+}
+
+export async function searchBangumiCharacters(params: { query: string }): Promise<ShareSubject[]> {
+  const { query } = params;
+  const q = query.trim();
+  if (!q) return [];
+
+  const response = await fetch(`${BANGUMI_API_BASE_URL}/v0/search/characters?limit=20`, {
+    method: "POST",
+    headers: toBangumiRequestHeaders(),
+    body: JSON.stringify({ keyword: q }),
+    next: { revalidate: 0 },
+  });
+
+  if (!response.ok) {
+    throw new Error(`Bangumi character search failed: ${response.status}`);
+  }
+
+  const json = (await response.json()) as BangumiV0PagedCharacter;
+  const list = Array.isArray(json?.data) ? json.data : [];
+  return list.map(toShareSubjectFromCharacter).slice(0, 20);
+}
+
+export async function searchBangumiPersons(params: { query: string }): Promise<ShareSubject[]> {
+  const { query } = params;
+  const q = query.trim();
+  if (!q) return [];
+
+  const response = await fetch(`${BANGUMI_API_BASE_URL}/v0/search/persons?limit=20`, {
+    method: "POST",
+    headers: toBangumiRequestHeaders(),
+    body: JSON.stringify({ keyword: q }),
+    next: { revalidate: 0 },
+  });
+
+  if (!response.ok) {
+    throw new Error(`Bangumi person search failed: ${response.status}`);
+  }
+
+  const json = (await response.json()) as BangumiV0PagedPerson;
+  const list = Array.isArray(json?.data) ? json.data : [];
+  return list.map(toShareSubjectFromPerson).slice(0, 20);
 }

@@ -23,6 +23,8 @@ export default function HomeKindEntry() {
     song: null,
     album: null,
     work: null,
+    character: null,
+    person: null,
   });
 
   function scrollKindIntoCenter(targetKind: SubjectKind, behavior: ScrollBehavior) {

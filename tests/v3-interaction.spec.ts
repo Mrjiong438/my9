@@ -221,7 +221,7 @@ test.describe("v3 interaction", () => {
     await expect(page.getByText("0 / 9 已选择")).toBeVisible();
     await expect(page.getByRole("button", { name: "撤销" })).toBeDisabled();
     await expect(page.getByRole("button", { name: "清空" })).toBeDisabled();
-    await expect(page.getByRole("button", { name: "还差 9 个可保存" })).toBeEnabled();
+    await expect(page.getByRole("button", { name: /^还差 9 .可保存$/ })).toBeEnabled();
     await expect(page.getByRole("button", { name: "保存图片" })).toHaveCount(0);
     await expect(page.getByRole("button", { name: "生成分享链接" })).toHaveCount(0);
     await expect(page.getByRole("button", { name: "生成分享图片" })).toHaveCount(0);
@@ -365,7 +365,7 @@ test.describe("v3 interaction", () => {
       await dialog.accept();
     });
 
-    await page.getByRole("button", { name: "还差 8 个可保存" }).click();
+    await page.getByRole("button", { name: /^还差 8 .可保存$/ }).click();
     await expect(page).toHaveURL(`/${DEFAULT_KIND}/s/${SHARE_ID}`, { timeout: 30_000 });
     expect(dialogIndex).toBe(1);
   });
@@ -399,7 +399,7 @@ test.describe("v3 interaction", () => {
     page.on("dialog", async (dialog) => {
       await dialog.accept();
     });
-    await page.getByRole("button", { name: "还差 8 个可保存" }).click();
+    await page.getByRole("button", { name: /^还差 8 .可保存$/ }).click();
     await expect(page).toHaveURL(`/${DEFAULT_KIND}/s/${SHARE_ID}`, { timeout: 30_000 });
 
     const wsrvRequest = page.waitForRequest((request) =>

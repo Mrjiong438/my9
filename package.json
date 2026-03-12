@@ -3,8 +3,8 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
-    "dev:test": "node -e \"require('fs').rmSync('.next', { recursive: true, force: true })\" && next dev",
+    "dev": "next dev -H 0.0.0.0",
+    "dev:test": "node -e \"require('fs').rmSync('.next', { recursive: true, force: true })\" && next dev -H 0.0.0.0",
     "share-count:snapshot": "node scripts/write-share-count-snapshot.mjs",
     "prebuild": "npm run share-count:snapshot",
     "build": "next build",

@@ -1,6 +1,11 @@
 import { NextResponse } from "next/server";
 import { DEFAULT_SUBJECT_KIND, SubjectKind, parseSubjectKind } from "@/lib/subject-kind";
-import { buildBangumiSearchResponse, searchBangumiSubjects } from "@/lib/bangumi/search";
+import {
+  buildBangumiSearchResponse,
+  searchBangumiSubjects,
+  searchBangumiCharacters,
+  searchBangumiPersons,
+} from "@/lib/bangumi/search";
 import { normalizeSearchQuery } from "@/lib/search/query";
 
 const SEARCH_CDN_TTL_SECONDS = 900;
@@ -188,7 +193,11 @@ async function getCachedSearchItems(query: string, kind: SubjectKind): Promise<S
     return pending;
   }
 
-  const requestPromise = searchBangumiSubjects({ query, kind });
+  const requestPromise = kind === "character"
+    ? searchBangumiCharacters({ query })
+    : kind === "person"
+      ? searchBangumiPersons({ query })
+      : searchBangumiSubjects({ query, kind });
   memory.inflight.set(key, requestPromise);
 
   try {
