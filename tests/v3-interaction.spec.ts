@@ -199,6 +199,75 @@ async function fillSlot(page: Page, slot: number, query: string) {
   await expect(page.getByText(`已填入第 ${slot} 格`)).toBeVisible();
 }
 
+async function fillSlotByKind(page: Page, options: {
+  slot: number;
+  subjectLabel: string;
+  searchPlaceholder: string;
+  query: string;
+}) {
+  const { slot, subjectLabel, searchPlaceholder, query } = options;
+  await page.getByLabel(`选择第 ${slot} 格${subjectLabel}`).click();
+  const searchInput = page.getByPlaceholder(searchPlaceholder);
+  await searchInput.fill(query);
+  await searchInput.press("Enter");
+  await expect(page.locator("#search-results-list button").first()).toBeVisible();
+  await searchInput.press("Enter");
+  await expect(page.getByText(`已填入第 ${slot} 格`)).toBeVisible();
+}
+
+async function mockTrendsApi(page: Page) {
+  await page.route(/\/api\/trends\?/, async (route) => {
+    const url = new URL(route.request().url());
+    const kind = (url.searchParams.get("kind") || DEFAULT_KIND).trim();
+    const period = (url.searchParams.get("period") || "24h").trim();
+    const view = (url.searchParams.get("view") || "overall").trim();
+
+    const trendId = kind === "character"
+      ? "88001"
+      : kind === "person"
+        ? "99002"
+        : "77001";
+    const trendName = kind === "character"
+      ? "测试角色"
+      : kind === "person"
+        ? "测试人物"
+        : "测试条目";
+
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        ok: true,
+        period,
+        view,
+        sampleCount: 31,
+        range: {
+          from: Date.now() - 24 * 60 * 60 * 1000,
+          to: Date.now(),
+        },
+        lastUpdatedAt: Date.now(),
+        items: [
+          {
+            key: `${kind}:${trendId}`,
+            label: trendName,
+            count: 12,
+            games: [
+              {
+                id: trendId,
+                name: trendName,
+                localizedName: trendName,
+                cover: "https://lain.bgm.tv/r/400/pic/cover/l/trend.jpg",
+                releaseYear: 2020,
+                count: 12,
+              },
+            ],
+          },
+        ],
+      }),
+    });
+  });
+}
+
 test.describe("v3 interaction", () => {
   test.describe.configure({ mode: "serial" });
 
@@ -557,6 +626,62 @@ test.describe("v3 interaction", () => {
     await expect(page.getByPlaceholder("输入你的昵称")).toHaveValue("全局玩家B");
     await expect(page.getByText("1 / 9 已选择")).toBeVisible();
 
+  });
+
+  test("角色与人物分享页条目外链指向 Bangumi 角色/人物页", async ({ page }) => {
+    const cases = [
+      {
+        kind: "character",
+        subjectLabel: "角色",
+        searchPlaceholder: "输入角色名称",
+        segment: "character",
+      },
+      {
+        kind: "person",
+        subjectLabel: "人物",
+        searchPlaceholder: "输入人物名称",
+        segment: "person",
+      },
+    ] as const;
+
+    for (const item of cases) {
+      await page.goto(`/${item.kind}`);
+      await fillSlotByKind(page, {
+        slot: 1,
+        subjectLabel: item.subjectLabel,
+        searchPlaceholder: item.searchPlaceholder,
+        query: `${item.kind}-q1`,
+      });
+
+      page.once("dialog", async (dialog) => {
+        await dialog.accept();
+      });
+      await page.getByRole("button", { name: /^还差 8 .可保存$/ }).click();
+      await expect(page).toHaveURL(`/${item.kind}/s/${SHARE_ID}`, { timeout: 30_000 });
+
+      const link = page.getByTitle("在 Bangumi 查看").first();
+      await expect(link).toHaveAttribute(
+        "href",
+        new RegExp(`^https://bgm\\.tv/${item.segment}/\\d+$`)
+      );
+    }
+  });
+
+  test("趋势页角色与人物外链分别指向 Bangumi 角色/人物页", async ({ page }) => {
+    await mockTrendsApi(page);
+
+    await page.goto("/trends?kind=character&period=24h&view=overall");
+    await page.getByRole("button", { name: "今天" }).click();
+
+    const trendLink = page.locator('a[title="在 Bangumi 查看"]').first();
+    await expect(trendLink).toHaveAttribute("href", "https://bgm.tv/character/88001", {
+      timeout: 15_000,
+    });
+
+    await page.getByRole("button", { name: "人物" }).click();
+    await expect(trendLink).toHaveAttribute("href", "https://bgm.tv/person/99002", {
+      timeout: 15_000,
+    });
   });
 
   test("移动端分享按钮顺序为图片在上链接在下", async ({ page }) => {
