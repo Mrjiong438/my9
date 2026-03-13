@@ -721,7 +721,7 @@ export default function My9V3App({
             大家的构成
             <ChevronRight className="h-4 w-4 text-sky-500 dark:text-sky-300" aria-hidden="true" />
           </button>
-          <p className="text-sm text-amber-600 dark:text-amber-400">现已追加电影/电视剧/单曲/专辑/人物/角色的支持！</p>
+          <p className="text-sm text-amber-600 dark:text-amber-400">作品分类现已支持添加影视音乐！</p>
           <SupportButton/>
         </header>
 

@@ -17,6 +17,9 @@ const donationAcknowledgements: Array<{
   amount: string;
   message: string;
 }> = [
+  { date: "2026-03-13", name: "匿名", amount: "1", message: "" },
+  { date: "2026-03-13", name: "春华宜照灼", amount: "10", message: "能不能出一个构成我的9本本子（（开发者注：商业本的话已经有了（小声）" },
+  { date: "2026-03-13", name: "羽喵", amount: "20", message: "好活当赏" },
   { date: "2026-03-13", name: "春华宜照灼", amount: "3", message: "" },
   { date: "2026-03-13", name: "匿名", amount: "10", message: "" },
   { date: "2026-03-13", name: "匿名", amount: "1", message: "" },
