@@ -2,6 +2,10 @@ import { SubjectKind } from "@/lib/subject-kind";
 import { ShareSubject, SubjectSearchResponse } from "@/lib/share/types";
 
 const ITUNES_API_BASE_URL = "https://itunes.apple.com";
+const ITUNES_RETRY_MAX_ATTEMPTS = 3;
+const ITUNES_RETRY_BASE_DELAY_MS = 300;
+const ITUNES_RETRY_MAX_DELAY_MS = 10 * 1000;
+const ITUNES_RETRYABLE_STATUS = new Set([408, 425, 429, 500, 502, 503, 504]);
 
 type ItunesTrackResult = {
   wrapperType: string;
@@ -38,6 +42,16 @@ export type ItunesMixedSearchResult = {
   songs: ShareSubject[];
   albums: ShareSubject[];
 };
+
+class ItunesHttpError extends Error {
+  status: number;
+
+  constructor(status: number) {
+    super(`iTunes search failed: ${status}`);
+    this.name = "ItunesHttpError";
+    this.status = status;
+  }
+}
 
 function extractYear(raw?: string | null): number | undefined {
   if (!raw) return undefined;
@@ -129,6 +143,67 @@ function isItunesCollectionResult(value: ItunesSearchResult): value is ItunesCol
   );
 }
 
+function isRetryableStatus(status: number): boolean {
+  return ITUNES_RETRYABLE_STATUS.has(status);
+}
+
+function isRetryableFetchError(error: unknown): boolean {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+  if (error.name === "AbortError") {
+    return false;
+  }
+  return true;
+}
+
+function parseRetryAfterMs(value: string | null): number | null {
+  if (!value) {
+    return null;
+  }
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+  if (/^\d+$/.test(trimmed)) {
+    const seconds = Number.parseInt(trimmed, 10);
+    if (!Number.isFinite(seconds) || seconds < 0) {
+      return null;
+    }
+    return seconds * 1000;
+  }
+  const dateMs = Date.parse(trimmed);
+  if (!Number.isFinite(dateMs)) {
+    return null;
+  }
+  return Math.max(0, dateMs - Date.now());
+}
+
+function computeRetryDelayMs(params: {
+  attempt: number;
+  retryAfterMs?: number | null;
+}): number {
+  const { attempt, retryAfterMs } = params;
+  if (typeof retryAfterMs === "number" && Number.isFinite(retryAfterMs)) {
+    return Math.min(Math.max(0, Math.trunc(retryAfterMs)), ITUNES_RETRY_MAX_DELAY_MS);
+  }
+  const exponentialDelay = Math.min(
+    ITUNES_RETRY_BASE_DELAY_MS * 2 ** Math.max(0, attempt - 1),
+    ITUNES_RETRY_MAX_DELAY_MS
+  );
+  const jitter = Math.floor(Math.random() * 120);
+  return Math.min(exponentialDelay + jitter, ITUNES_RETRY_MAX_DELAY_MS);
+}
+
+async function sleep(ms: number): Promise<void> {
+  if (ms <= 0) {
+    return;
+  }
+  await new Promise<void>((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
 async function fetchItunesSearch<T>(
   term: string,
   options?: {
@@ -145,20 +220,55 @@ async function fetchItunesSearch<T>(
   url.searchParams.set("country", "cn"); // Default to China region for better local results
   url.searchParams.set("limit", String(options?.limit ?? 20));
 
-  const response = await fetch(url.toString(), {
+  const requestInit = {
     method: "GET",
     headers: {
       Accept: "application/json",
     },
     next: { revalidate: 0 },
-  } as RequestInit & { next?: { revalidate?: number } });
+  } as RequestInit & { next?: { revalidate?: number } };
 
-  if (!response.ok) {
-    throw new Error(`iTunes search failed: ${response.status}`);
+  let lastError: unknown = null;
+
+  for (let attempt = 1; attempt <= ITUNES_RETRY_MAX_ATTEMPTS; attempt += 1) {
+    try {
+      const response = await fetch(url.toString(), requestInit);
+      if (response.ok) {
+        const json = (await response.json()) as { results?: T[] };
+        return Array.isArray(json?.results) ? json.results : [];
+      }
+
+      const canRetry =
+        attempt < ITUNES_RETRY_MAX_ATTEMPTS && isRetryableStatus(response.status);
+      if (!canRetry) {
+        throw new ItunesHttpError(response.status);
+      }
+
+      const retryAfterMs = parseRetryAfterMs(response.headers.get("retry-after"));
+      const waitMs = computeRetryDelayMs({
+        attempt,
+        retryAfterMs,
+      });
+      await sleep(waitMs);
+    } catch (error) {
+      lastError = error;
+      if (error instanceof ItunesHttpError) {
+        throw error;
+      }
+      const canRetry =
+        attempt < ITUNES_RETRY_MAX_ATTEMPTS && isRetryableFetchError(error);
+      if (!canRetry) {
+        throw error;
+      }
+      const waitMs = computeRetryDelayMs({ attempt });
+      await sleep(waitMs);
+    }
   }
 
-  const json = (await response.json()) as { results?: T[] };
-  return Array.isArray(json?.results) ? json.results : [];
+  if (lastError instanceof Error) {
+    throw lastError;
+  }
+  throw new Error("iTunes search failed");
 }
 
 function scoreCandidate(query: string, subject: ShareSubject): number {
