@@ -1,13 +1,12 @@
 import { searchBangumiSubjects } from "@/lib/bangumi/search";
 import { searchTmdbMovie, searchTmdbTv } from "@/lib/tmdb/search";
-import { searchItunesMixed, type ItunesMixedSearchResult } from "@/lib/itunes/search";
 import { ShareSubject, SubjectSearchResponse } from "@/lib/share/types";
 
 const WORK_SEARCH_LIMIT = 20;
 // Keep a very long timeout so each upstream source has enough time to respond.
 const SOURCE_TIMEOUT_MS = 5 * 60 * 1000;
 
-type WorkSourceKey = "bangumi" | "tmdb:movie" | "tmdb:tv" | "itunes:song" | "itunes:album";
+type WorkSourceKey = "bangumi" | "tmdb:movie" | "tmdb:tv";
 
 type ScoredItem = {
   item: ShareSubject;
@@ -44,23 +43,22 @@ function normalizeBangumiSubjectType(value: unknown): number | null {
 
 function sourcePriority(source: WorkSourceKey): number {
   if (source === "bangumi") return 0;
-  if (source.startsWith("tmdb:")) return 1;
-  return 2;
+  return 1;
 }
 
 function compareSourcePriority(a: WorkSourceKey, b: WorkSourceKey): number {
   return sourcePriority(a) - sourcePriority(b);
 }
 
-function toNamespacedId(namespace: "tmdb" | "itunes", entity: "movie" | "tv" | "song" | "album", id: string | number) {
+function toNamespacedId(namespace: "tmdb", entity: "movie" | "tv", id: string | number) {
   const normalized = normalizeSubjectId(id);
   return `${namespace}:${entity}:${normalized}`;
 }
 
 function withNamespacedId(
   items: ShareSubject[],
-  namespace: "tmdb" | "itunes",
-  entity: "movie" | "tv" | "song" | "album"
+  namespace: "tmdb",
+  entity: "movie" | "tv"
 ): ShareSubject[] {
   return items.map((item) => ({
     ...item,
@@ -255,7 +253,7 @@ export async function searchWorkSubjects(params: {
     return [];
   }
 
-  const [bangumiResult, tmdbMovieResult, tmdbTvResult, itunesMixedResult] = await Promise.allSettled([
+  const [bangumiResult, tmdbMovieResult, tmdbTvResult] = await Promise.allSettled([
     withTimeout(searchBangumiSubjects({ query: q, kind: "work" }), SOURCE_TIMEOUT_MS, "bangumi"),
     withTimeout(
       searchTmdbMovie({ query: q, kind: "movie" }).then((items) => withNamespacedId(items, "tmdb", "movie")),
@@ -267,32 +265,16 @@ export async function searchWorkSubjects(params: {
       SOURCE_TIMEOUT_MS,
       "tmdb:tv"
     ),
-    withTimeout(searchItunesMixed({ query: q }), SOURCE_TIMEOUT_MS, "itunes:mixed"),
   ] as const);
 
   const bangumiItems = bangumiResult.status === "fulfilled" ? bangumiResult.value : [];
   const tmdbMovieItems = tmdbMovieResult.status === "fulfilled" ? tmdbMovieResult.value : [];
   const tmdbTvItems = tmdbTvResult.status === "fulfilled" ? tmdbTvResult.value : [];
-  const itunesMixed: ItunesMixedSearchResult =
-    itunesMixedResult.status === "fulfilled"
-      ? itunesMixedResult.value
-      : {
-          songs: [],
-          albums: [],
-        };
 
   const allResults: Array<{ source: WorkSourceKey; items: ShareSubject[] }> = [
     { source: "bangumi", items: bangumiItems },
     { source: "tmdb:movie", items: tmdbMovieItems },
     { source: "tmdb:tv", items: tmdbTvItems },
-    {
-      source: "itunes:song",
-      items: withNamespacedId(itunesMixed.songs, "itunes", "song"),
-    },
-    {
-      source: "itunes:album",
-      items: withNamespacedId(itunesMixed.albums, "itunes", "album"),
-    },
   ];
 
   return mergeWorkItems(q, allResults);

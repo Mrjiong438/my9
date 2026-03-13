@@ -721,7 +721,8 @@ export default function My9V3App({
             大家的构成
             <ChevronRight className="h-4 w-4 text-sky-500 dark:text-sky-300" aria-hidden="true" />
           </button>
-          <p className="text-sm text-amber-600 dark:text-amber-400">作品分类现已支持添加影视音乐！</p>
+          <p className="text-sm text-amber-600 dark:text-amber-400">作品分类现已支持添加影视<span style={{ textDecoration: "line-through" }}>音乐</span>！</p>
+          <p className="text-sm text-amber-300 dark:text-amber-200">为确保音乐部分本身的稳定性临时下线该部分……</p>
           <SupportButton/>
         </header>
 
