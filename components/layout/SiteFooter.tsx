@@ -68,7 +68,7 @@ export function SiteFooter({ className, kind }: SiteFooterProps) {
             >
               TMDB
             </a>
-            {" + "}
+            {/* {" + "}
             <a
               href="https://music.apple.com/"
               target="_blank"
@@ -76,7 +76,7 @@ export function SiteFooter({ className, kind }: SiteFooterProps) {
               className="font-semibold text-sky-600 hover:underline"
             >
               Apple Music
-            </a>
+            </a> */}
           </>
         ) : isTmdbKind ? (
           <a
