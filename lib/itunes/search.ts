@@ -1,5 +1,6 @@
 import { SubjectKind } from "@/lib/subject-kind";
 import { ShareSubject, SubjectSearchResponse } from "@/lib/share/types";
+import { resolveItunesStorefrontForQuery, type ItunesStorefront } from "@/lib/itunes/storefront";
 
 const ITUNES_API_BASE_URL = "https://itunes.apple.com";
 const ITUNES_RETRY_MAX_ATTEMPTS = 3;
@@ -208,6 +209,7 @@ async function fetchItunesSearch<T>(
   term: string,
   options?: {
     entity?: "musicTrack" | "album";
+    country?: ItunesStorefront;
     limit?: number;
   }
 ): Promise<T[]> {
@@ -217,7 +219,7 @@ async function fetchItunesSearch<T>(
   if (options?.entity) {
     url.searchParams.set("entity", options.entity);
   }
-  url.searchParams.set("country", "cn"); // Default to China region for better local results
+  url.searchParams.set("country", options?.country ?? "us");
   url.searchParams.set("limit", String(options?.limit ?? 20));
 
   const requestInit = {
@@ -354,9 +356,11 @@ export async function searchItunesSong(params: {
   const { query } = params;
   const q = query.trim();
   if (!q) return [];
+  const storefront = resolveItunesStorefrontForQuery(q);
 
   const results = await fetchItunesSearch<ItunesTrackResult>(q, {
     entity: "musicTrack",
+    country: storefront,
     limit: 20,
   });
   return results
@@ -372,9 +376,11 @@ export async function searchItunesAlbum(params: {
   const { query } = params;
   const q = query.trim();
   if (!q) return [];
+  const storefront = resolveItunesStorefrontForQuery(q);
 
   const results = await fetchItunesSearch<ItunesCollectionResult>(q, {
     entity: "album",
+    country: storefront,
     limit: 20,
   });
   return results.filter(r => r.wrapperType === "collection").map(toShareAlbumSubject);
@@ -392,7 +398,9 @@ export async function searchItunesMixed(params: {
     };
   }
 
+  const storefront = resolveItunesStorefrontForQuery(q);
   const results = await fetchItunesSearch<ItunesSearchResult>(q, {
+    country: storefront,
     limit: 40,
   });
 

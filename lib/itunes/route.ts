@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { DEFAULT_SUBJECT_KIND, SubjectKind, parseSubjectKind } from "@/lib/subject-kind";
 import { normalizeSearchQuery } from "@/lib/search/query";
 import { buildItunesSearchResponse, searchItunesSong, searchItunesAlbum } from "@/lib/itunes/search";
+import { resolveItunesStorefrontForQuery } from "@/lib/itunes/storefront";
 
 const SEARCH_CDN_TTL_SECONDS = 900;
 const SEARCH_STALE_TTL_SECONDS = 86400;
@@ -50,7 +51,9 @@ function trimSearchMemoryCache(cache: Map<string, { expiresAt: number; items: Se
 }
 
 function toSearchCacheKey(kind: SubjectKind, query: string) {
-  return `${kind}:${normalizeSearchQuery(query)}`;
+  const normalizedQuery = normalizeSearchQuery(query);
+  const storefront = resolveItunesStorefrontForQuery(normalizedQuery);
+  return `${kind}:${storefront}:${normalizedQuery}`;
 }
 
 function toRateLimitKey(kind: SubjectKind, ip: string) {

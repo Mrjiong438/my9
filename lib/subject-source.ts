@@ -1,4 +1,5 @@
 import type { SubjectKind } from "@/lib/subject-kind";
+import { resolveItunesStorefrontForQuery } from "@/lib/itunes/storefront";
 
 type SubjectLike = {
   id?: string | number | null;
@@ -117,7 +118,8 @@ function toAppleMusicLink(subject: SubjectLike): string {
   const storeUrl = sanitizeHttpUrl(subject.storeUrls?.apple);
   if (storeUrl) return storeUrl;
   const query = encodeURIComponent(displayName(subject));
-  return `https://music.apple.com/cn/search?term=${query}`;
+  const storefront = resolveItunesStorefrontForQuery(displayName(subject));
+  return `https://music.apple.com/${storefront}/search?term=${query}`;
 }
 
 function bangumiResolution(subject: SubjectLike, bangumiSearchCat?: number): SubjectLinkResolution {
