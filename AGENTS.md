@@ -77,7 +77,6 @@
   - `CRON_SECRET`（生产环境建议必配，用于手动保护 `/api/cron/archive`）
   - 可选：`MY9_ANALYTICS_ACCOUNT_ID`（未设置时可回退到 `CLOUDFLARE_ACCOUNT_ID`）
   - 可选：`MY9_ANALYTICS_API_TOKEN`（Workers Analytics Engine SQL 读权限；未设置时 `cf:sync-secrets` 可临时回退到 `CLOUDFLARE_API_TOKEN`）
-  - 可选：`MY9_SHARE_VIEW_ROLLUP_DAYS`（默认 `2`，每天 cron 回刷最近 N 个已闭合的北京时间自然日）
   - 可选：`MY9_ARCHIVE_OLDER_THAN_DAYS`（默认 `30`）
   - 可选：`MY9_ARCHIVE_BATCH_SIZE`（默认 `500`）
   - 可选：`MY9_ARCHIVE_CLEANUP_TREND_DAYS`（默认 `190`，勿低于 `180`，否则影响 `180d` 趋势）
@@ -97,7 +96,7 @@
 - 迁移脚本默认读取 `my9_shares_v1`，并写入 `my9_share_registry_v2` / `my9_share_alias_v1` / `my9_subject_dim_v1`；当前趋势表需通过 `node scripts/rebuild-trends-kind-v3.mjs` 单独重建到 `my9_trend_subject_kind_*_v3`。
 - 迁移完成后先执行 `node scripts/verify-shares-v2-migration.mjs`；仅当 `missing_count=0` 且 `orphan_alias_count=0` 才允许考虑关闭 v1 兜底。
 - 日常归档由 Cloudflare Workers Cron 调度 `worker.js` 中的 `scheduled()`，当前配置在 `wrangler.jsonc`（`5 16 * * *`，即北京时间 `00:05`，每天一次）。
-- 同一个 daily cron 还会把 Workers Analytics Engine 中最近 `MY9_SHARE_VIEW_ROLLUP_DAYS` 个已闭合自然日的分享页访问量汇总回写到 `my9_share_view_daily_v1`。
+- 同一个 daily cron 还会把 Workers Analytics Engine 中截至前一个已闭合北京时间自然日的分享页访问量累计回写到 `my9_share_view_total_v1`（每个 `share_id` 一行）。
 - `app/api/cron/archive` 继续保留为手动运维入口；生产环境建议始终使用 `CRON_SECRET`。
 - 生产切换顺序：`v2 优先 + v1 兜底` -> 全量迁移与校验 -> 关闭兜底 -> 稳定观察后再删除 v1 表。
 

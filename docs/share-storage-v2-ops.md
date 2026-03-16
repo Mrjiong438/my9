@@ -14,7 +14,6 @@
 - Optional: `CRON_SECRET` (recommended in production, used by manual `/api/cron/archive` authorization header)
 - Optional: `MY9_ANALYTICS_ACCOUNT_ID` (runtime fallback for Analytics Engine SQL rollup; defaults to `CLOUDFLARE_ACCOUNT_ID` when synced)
 - Optional: `MY9_ANALYTICS_API_TOKEN` (recommended: dedicated read token for Analytics Engine SQL rollup)
-- Optional: `MY9_SHARE_VIEW_ROLLUP_DAYS` (default: `2`, refresh this many recently closed Beijing days)
 - Optional: `MY9_ARCHIVE_OLDER_THAN_DAYS` (default `30`)
 - Optional: `MY9_ARCHIVE_BATCH_SIZE` (default `500`)
 - Optional: `MY9_ARCHIVE_CLEANUP_TREND_DAYS` (default `190`)
@@ -104,9 +103,9 @@ Useful flags:
 
 ## Share view analytics rollup
 
-The Worker logs share page document requests into Workers Analytics Engine and the daily cron writes absolute daily counts into:
+The Worker logs share page document requests into Workers Analytics Engine and the daily cron writes absolute cumulative counts into:
 
-- `my9_share_view_daily_v1`
+- `my9_share_view_total_v1`
 
 Current dataset bindings:
 
@@ -119,13 +118,14 @@ Current dataset bindings:
 - Scheduler entry: `worker.js` `scheduled()`
 - Config file: `wrangler.jsonc`
 - Current schedule: `5 16 * * *` (UTC, Beijing `00:05`, once per day)
-- Scheduled job default behavior: archive shares older than `30` days, then roll up recent share view counts from Workers Analytics Engine into Postgres
+- Scheduled job default behavior: archive shares older than `30` days, then roll up share view totals from Workers Analytics Engine into Postgres
 - Manual route behavior: archive-only maintenance, protected by `CRON_SECRET` in production
 
 Notes:
 
 - Runtime cold storage reads/writes use the `MY9_COLD_STORAGE` R2 binding first.
 - Runtime share page tracking writes to the `MY9_SHARE_VIEW_ANALYTICS` Analytics Engine binding.
+- Postgres rollup stores one row per `share_id`; the cron recomputes totals for all closed Beijing natural days up to the previous day.
 - Existing Node scripts still use `R2_ENDPOINT` / `R2_BUCKET` / `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY`.
 - For production hardening, prefer syncing a dedicated `MY9_ANALYTICS_API_TOKEN` instead of reusing the deployment token.
 - Failed runs should be inspected in Worker logs and re-run manually when needed.

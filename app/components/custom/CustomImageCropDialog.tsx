@@ -88,7 +88,7 @@ export function CustomImageCropDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="w-[96vw] max-w-3xl rounded-2xl p-4 sm:p-6">
+      <DialogContent className="w-[96vw] max-w-3xl rounded-2xl p-4 data-[state=open]:zoom-in-100 data-[state=closed]:zoom-out-100 sm:p-6">
         <DialogHeader>
           <DialogTitle>裁切上传图片</DialogTitle>
         </DialogHeader>
@@ -103,6 +103,12 @@ export function CustomImageCropDialog({
                 aspect={3 / 4}
                 showGrid
                 objectFit="cover"
+                style={{
+                  mediaStyle: {
+                    maxWidth: "none",
+                    maxHeight: "none",
+                  },
+                }}
                 onCropChange={setCrop}
                 onZoomChange={setZoom}
                 onCropComplete={(_, croppedPixels) => setCroppedAreaPixels(croppedPixels)}

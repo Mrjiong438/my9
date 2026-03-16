@@ -1,11 +1,10 @@
 import { normalizeShareId } from "@/lib/share/id";
-import { upsertShareViewDailyCounts } from "@/lib/share/storage";
+import { upsertShareViewTotalCounts } from "@/lib/share/storage";
 import { parseSubjectKind, type SubjectKind } from "@/lib/subject-kind";
 
 const ANALYTICS_SQL_API_BASE = "https://api.cloudflare.com/client/v4";
 const BEIJING_TZ_OFFSET_MS = 8 * 60 * 60 * 1000;
 const DAY_MS = 24 * 60 * 60 * 1000;
-const DEFAULT_ROLLUP_DAYS = 2;
 const DATASET_NAME_PATTERN = /^[A-Za-z0-9_]+$/;
 const SHARE_PAGE_PATH_PATTERN = /^\/([^/]+)\/s\/([^/]+)$/;
 
@@ -25,12 +24,6 @@ type ShareViewLogTarget = {
   host: string;
 };
 
-type ShareViewRollupWindow = {
-  dayKey: number;
-  startMs: number;
-  endMs: number;
-};
-
 type ShareViewRollupRow = {
   shareId: string;
   kind: SubjectKind;
@@ -42,13 +35,9 @@ export type ShareViewRollupResult = {
   skipped: boolean;
   reason?: string;
   dataset?: string;
-  rollupDays: number;
   rowsFetched: number;
   rowsWritten: number;
-  windows: Array<{
-    dayKey: number;
-    rowCount: number;
-  }>;
+  closedThroughDayKey: number | null;
 };
 
 function readString(value: unknown): string | null {
@@ -61,13 +50,6 @@ function readEnvString(env: WorkerEnvLike, key: string): string | null {
   const fromEnv = readString(env?.[key]);
   if (fromEnv) return fromEnv;
   return readString(process.env[key]);
-}
-
-function parsePositiveInt(value: string | null, fallback: number): number {
-  if (!value) return fallback;
-  const parsed = Number(value);
-  if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
-  return Math.trunc(parsed);
 }
 
 function toBeijingDayKey(timestampMs: number): number {
@@ -84,22 +66,6 @@ function getBeijingDayStart(timestampMs: number): number {
 
 function toSqlUtcDateTime(timestampMs: number): string {
   return new Date(timestampMs).toISOString().slice(0, 19).replace("T", " ");
-}
-
-function resolveClosedRollupWindows(nowMs: number, rollupDays: number): ShareViewRollupWindow[] {
-  const currentDayStart = getBeijingDayStart(nowMs);
-  const windows: ShareViewRollupWindow[] = [];
-
-  for (let offset = rollupDays; offset >= 1; offset -= 1) {
-    const startMs = currentDayStart - offset * DAY_MS;
-    windows.push({
-      dayKey: toBeijingDayKey(startMs),
-      startMs,
-      endMs: startMs + DAY_MS,
-    });
-  }
-
-  return windows;
 }
 
 function parseJsonEachRow<T>(input: string): T[] {
@@ -190,7 +156,6 @@ function resolveRollupConfig(env?: WorkerEnvLike) {
       readEnvString(env, "MY9_ANALYTICS_ACCOUNT_ID") ?? readEnvString(env, "CLOUDFLARE_ACCOUNT_ID"),
     apiToken: readEnvString(env, "MY9_ANALYTICS_API_TOKEN") ?? readEnvString(env, "CLOUDFLARE_API_TOKEN"),
     dataset: readEnvString(env, "MY9_SHARE_VIEW_ANALYTICS_DATASET"),
-    rollupDays: parsePositiveInt(readEnvString(env, "MY9_SHARE_VIEW_ROLLUP_DAYS"), DEFAULT_ROLLUP_DAYS),
   };
 }
 
@@ -218,11 +183,11 @@ async function queryAnalyticsSql(accountId: string, apiToken: string, query: str
   return text;
 }
 
-async function queryShareViewRollupWindow(
+async function queryShareViewTotals(
   accountId: string,
   apiToken: string,
   dataset: string,
-  window: ShareViewRollupWindow
+  endMs: number
 ): Promise<ShareViewRollupRow[]> {
   const query = `
 SELECT
@@ -230,8 +195,7 @@ SELECT
   blob1 AS kind,
   SUM(_sample_interval * double1) AS view_count
 FROM ${assertDatasetName(dataset)}
-WHERE timestamp >= toDateTime('${toSqlUtcDateTime(window.startMs)}')
-  AND timestamp < toDateTime('${toSqlUtcDateTime(window.endMs)}')
+WHERE timestamp < toDateTime('${toSqlUtcDateTime(endMs)}')
 GROUP BY index1, blob1
 FORMAT JSONEachRow
 `.trim();
@@ -272,10 +236,9 @@ export async function runShareViewRollup(options?: {
       ok: true,
       skipped: true,
       reason: "missing analytics config",
-      rollupDays: config.rollupDays,
       rowsFetched: 0,
       rowsWritten: 0,
-      windows: [],
+      closedThroughDayKey: null,
     };
     if (options?.logLabel) {
       console.log(`${options.logLabel} ${JSON.stringify(result)}`);
@@ -283,39 +246,28 @@ export async function runShareViewRollup(options?: {
     return result;
   }
 
-  const windows = resolveClosedRollupWindows(options?.nowMs ?? Date.now(), config.rollupDays);
-  let rowsFetched = 0;
-  let rowsWritten = 0;
-  const windowSummaries: ShareViewRollupResult["windows"] = [];
-
-  for (const window of windows) {
-    const rows = await queryShareViewRollupWindow(config.accountId, config.apiToken, dataset, window);
-    rowsFetched += rows.length;
-    rowsWritten += await upsertShareViewDailyCounts(
-      rows.map((row) => ({
-        shareId: row.shareId,
-        kind: row.kind,
-        dayKey: window.dayKey,
-        viewCount: row.viewCount,
-      })),
-      {
-        lastAggregatedAt: options?.nowMs ?? Date.now(),
-      }
-    );
-    windowSummaries.push({
-      dayKey: window.dayKey,
-      rowCount: rows.length,
-    });
-  }
+  const nowMs = options?.nowMs ?? Date.now();
+  const currentDayStart = getBeijingDayStart(nowMs);
+  const rows = await queryShareViewTotals(config.accountId, config.apiToken, dataset, currentDayStart);
+  const rowsFetched = rows.length;
+  const rowsWritten = await upsertShareViewTotalCounts(
+    rows.map((row) => ({
+      shareId: row.shareId,
+      kind: row.kind,
+      viewCount: row.viewCount,
+    })),
+    {
+      lastAggregatedAt: nowMs,
+    }
+  );
 
   const result: ShareViewRollupResult = {
     ok: true,
     skipped: false,
     dataset,
-    rollupDays: config.rollupDays,
     rowsFetched,
     rowsWritten,
-    windows: windowSummaries,
+    closedThroughDayKey: toBeijingDayKey(currentDayStart - 1),
   };
 
   if (options?.logLabel) {

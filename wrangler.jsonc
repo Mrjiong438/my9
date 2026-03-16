@@ -30,8 +30,7 @@
     "crons": ["5 16 * * *"]
   },
   "vars": {
-    "MY9_SHARE_VIEW_ANALYTICS_DATASET": "my9_share_views_v1",
-    "MY9_SHARE_VIEW_ROLLUP_DAYS": "2"
+    "MY9_SHARE_VIEW_ANALYTICS_DATASET": "my9_share_views_v1"
   },
   "analytics_engine_datasets": [
     {
@@ -54,8 +53,7 @@
         }
       ],
       "vars": {
-        "MY9_SHARE_VIEW_ANALYTICS_DATASET": "my9_share_views_test_v1",
-        "MY9_SHARE_VIEW_ROLLUP_DAYS": "2"
+        "MY9_SHARE_VIEW_ANALYTICS_DATASET": "my9_share_views_test_v1"
       },
       "analytics_engine_datasets": [
         {

@@ -37,7 +37,7 @@ const TREND_COUNT_ALL_TABLE = "my9_trend_subject_kind_all_v3";
 const TREND_COUNT_DAY_TABLE = "my9_trend_subject_kind_day_v3";
 const TREND_COUNT_HOUR_TABLE = "my9_trend_subject_kind_hour_v3";
 const TRENDS_CACHE_TABLE = "my9_trends_cache_v1";
-const SHARE_VIEW_DAILY_TABLE = "my9_share_view_daily_v1";
+const SHARE_VIEW_TOTAL_TABLE = "my9_share_view_total_v1";
 const TRENDS_CACHE_VERSION = "v9";
 const TRENDS_SAMPLE_CACHE_VERSION = "v5";
 const SAMPLE_SUMMARY_CACHE_VIEW = "sample";
@@ -54,8 +54,7 @@ const SHARE_ALIAS_TARGET_IDX = `${SHARE_ALIAS_TABLE}_target_idx`;
 const SUBJECT_DIM_SUBJECT_IDX = `${SUBJECT_DIM_TABLE}_subject_idx`;
 const TREND_COUNT_ALL_KIND_COUNT_IDX = `${TREND_COUNT_ALL_TABLE}_kind_count_idx`;
 const TRENDS_CACHE_EXPIRES_IDX = `${TRENDS_CACHE_TABLE}_expires_idx`;
-const SHARE_VIEW_DAILY_DAY_IDX = `${SHARE_VIEW_DAILY_TABLE}_day_idx`;
-const SHARE_VIEW_DAILY_KIND_DAY_COUNT_IDX = `${SHARE_VIEW_DAILY_TABLE}_kind_day_count_idx`;
+const SHARE_VIEW_TOTAL_KIND_COUNT_IDX = `${SHARE_VIEW_TOTAL_TABLE}_kind_count_idx`;
 
 function readEnv(...names: string[]): string | null {
   for (const name of names) {
@@ -438,22 +437,16 @@ async function ensureSchema(): Promise<boolean> {
       `;
 
       await sql`
-        CREATE TABLE IF NOT EXISTS ${sql.unsafe(SHARE_VIEW_DAILY_TABLE)} (
-          share_id TEXT NOT NULL,
+        CREATE TABLE IF NOT EXISTS ${sql.unsafe(SHARE_VIEW_TOTAL_TABLE)} (
+          share_id TEXT PRIMARY KEY,
           kind TEXT NOT NULL,
-          day_key INT NOT NULL,
           view_count BIGINT NOT NULL,
-          last_aggregated_at BIGINT NOT NULL,
-          PRIMARY KEY (share_id, day_key)
+          last_aggregated_at BIGINT NOT NULL
         )
       `;
       await sql`
-        CREATE INDEX IF NOT EXISTS ${sql.unsafe(SHARE_VIEW_DAILY_DAY_IDX)}
-        ON ${sql.unsafe(SHARE_VIEW_DAILY_TABLE)} (day_key)
-      `;
-      await sql`
-        CREATE INDEX IF NOT EXISTS ${sql.unsafe(SHARE_VIEW_DAILY_KIND_DAY_COUNT_IDX)}
-        ON ${sql.unsafe(SHARE_VIEW_DAILY_TABLE)} (kind, day_key, view_count DESC, share_id)
+        CREATE INDEX IF NOT EXISTS ${sql.unsafe(SHARE_VIEW_TOTAL_KIND_COUNT_IDX)}
+        ON ${sql.unsafe(SHARE_VIEW_TOTAL_TABLE)} (kind, view_count DESC, share_id)
       `;
     })();
   }
@@ -2103,11 +2096,10 @@ export async function setTrendsCache(
   }
 }
 
-export async function upsertShareViewDailyCounts(
+export async function upsertShareViewTotalCounts(
   rows: Array<{
     shareId: string;
     kind: SubjectKind;
-    dayKey: number;
     viewCount: number;
   }>,
   options?: {
@@ -2118,10 +2110,9 @@ export async function upsertShareViewDailyCounts(
     .map((row) => ({
       share_id: typeof row.shareId === "string" ? row.shareId.trim().toLowerCase() : "",
       kind: parseSubjectKind(row.kind) ?? null,
-      day_key: Number.isFinite(row.dayKey) ? Math.trunc(row.dayKey) : 0,
       view_count: Number.isFinite(row.viewCount) ? Math.trunc(row.viewCount) : 0,
     }))
-    .filter((row) => row.share_id && row.kind && row.day_key > 0 && row.view_count > 0);
+    .filter((row) => row.share_id && row.kind && row.view_count > 0);
 
   if (normalizedRows.length === 0) {
     return 0;
@@ -2130,7 +2121,7 @@ export async function upsertShareViewDailyCounts(
   const sql = getSqlClient();
   if (!sql || !(await ensureSchema())) {
     if (!MEMORY_FALLBACK_ENABLED) {
-      throwDatabaseNotReady("upsertShareViewDailyCounts failed");
+      throwDatabaseNotReady("upsertShareViewTotalCounts failed");
     }
     return 0;
   }
@@ -2143,11 +2134,10 @@ export async function upsertShareViewDailyCounts(
     const result = (await sql.query(
       `
       WITH input_rows AS (
-        SELECT share_id, kind, day_key, view_count
+        SELECT share_id, kind, view_count
         FROM jsonb_to_recordset(COALESCE($1::jsonb, '[]'::jsonb)) AS r(
           share_id text,
           kind text,
-          day_key int,
           view_count bigint
         )
       ),
@@ -2155,16 +2145,14 @@ export async function upsertShareViewDailyCounts(
         SELECT
           share_id,
           kind,
-          day_key,
           SUM(view_count)::BIGINT AS view_count
         FROM input_rows
-        GROUP BY share_id, kind, day_key
+        GROUP BY share_id, kind
       ),
       resolved AS (
         SELECT
           COALESCE(a.target_share_id, f.share_id) AS share_id,
           COALESCE(s.kind, f.kind) AS kind,
-          f.day_key,
           SUM(f.view_count)::BIGINT AS view_count,
           $2::bigint AS last_aggregated_at
         FROM folded f
@@ -2173,24 +2161,21 @@ export async function upsertShareViewDailyCounts(
         GROUP BY
           COALESCE(a.target_share_id, f.share_id),
           COALESCE(s.kind, f.kind),
-          f.day_key,
           $2::bigint
       )
-      INSERT INTO ${SHARE_VIEW_DAILY_TABLE} (
+      INSERT INTO ${SHARE_VIEW_TOTAL_TABLE} (
         share_id,
         kind,
-        day_key,
         view_count,
         last_aggregated_at
       )
       SELECT
         share_id,
         kind,
-        day_key,
         view_count,
         last_aggregated_at
       FROM resolved
-      ON CONFLICT (share_id, day_key) DO UPDATE SET
+      ON CONFLICT (share_id) DO UPDATE SET
         kind = EXCLUDED.kind,
         view_count = EXCLUDED.view_count,
         last_aggregated_at = EXCLUDED.last_aggregated_at
@@ -2202,7 +2187,7 @@ export async function upsertShareViewDailyCounts(
     return result.length;
   } catch (error) {
     if (!MEMORY_FALLBACK_ENABLED) {
-      throwStorageError("upsertShareViewDailyCounts failed: database write error", error);
+      throwStorageError("upsertShareViewTotalCounts failed: database write error", error);
     }
     return 0;
   }

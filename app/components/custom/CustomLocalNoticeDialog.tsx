@@ -41,8 +41,8 @@ export function CustomLocalNoticeDialog({
         <DialogHeader>
           <DialogTitle>使用须知</DialogTitle>
           <DialogDescription className="space-y-2 pt-2 text-left">
-            <p>当有实在无法找到的条目时，可以使用自定义模式来自行上传图片。</p>
-            <p>自定义模式下，上传的图片不会提交到云端，也不会生成共享页面。</p>
+            <p>为了应对有条目实在无法找到的情况，追加了能够自行上传图片的自定义模式。</p>
+            <p>自定义模式下，上传的图片不会提交到云端，不会纳入数据统计，也不会生成共享页面。</p>
             <p>请先测试当前浏览器能否正常保存图片；如果失败，建议复制链接到系统浏览器继续，以防填写结果最后无法保存。</p>
           </DialogDescription>
         </DialogHeader>

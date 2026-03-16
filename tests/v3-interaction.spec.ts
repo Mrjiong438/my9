@@ -5,6 +5,15 @@ const SHARE_ID = "60fe04cbe7874fa2";
 const DEFAULT_KIND = "game";
 const ONE_PIXEL_PNG_BASE64 =
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9YxX5iQAAAAASUVORK5CYII=";
+const LANDSCAPE_SVG = `
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="640" viewBox="0 0 960 640">
+  <rect width="960" height="640" fill="#f3f6fb"/>
+  <rect x="60" y="60" width="840" height="520" fill="#ffffff" stroke="#dbe4f0" stroke-width="4"/>
+  <text x="480" y="260" text-anchor="middle" font-size="46" font-weight="700" fill="#0f172a">保存图片测试</text>
+  <text x="480" y="330" text-anchor="middle" font-size="28" font-weight="600" fill="#475569">如果这张图可以正常下载，当前浏览器环境通常可用。</text>
+  <text x="480" y="380" text-anchor="middle" font-size="28" font-weight="600" fill="#475569">若失败，请复制 /custom 到系统浏览器继续。</text>
+</svg>
+`.trim();
 
 type MockShareState = {
   kind: string;
@@ -969,6 +978,36 @@ test.describe("v3 interaction", () => {
     await expect(page.getByRole("heading", { name: "使用须知" })).toHaveCount(0);
   });
 
+  test("自定义模式上传裁切在移动端预览不拉伸", async ({ page }) => {
+    await page.setViewportSize({ width: 375, height: 812 });
+    await page.goto("/custom");
+    await page.getByRole("button", { name: "我知道了" }).click();
+
+    await page.getByLabel("选择第 1 格作品").click();
+    await page.getByRole("button", { name: "上传" }).click();
+    await page.locator('input[type="file"]').setInputFiles({
+      name: "landscape.svg",
+      mimeType: "image/svg+xml",
+      buffer: Buffer.from(LANDSCAPE_SVG, "utf8"),
+    });
+
+    await expect(page.getByRole("heading", { name: "裁切上传图片" })).toBeVisible();
+    await page.waitForTimeout(250);
+
+    const mediaRatio = await page.evaluate(() => {
+      const media = document.querySelector(".reactEasyCrop_Image") as HTMLImageElement | null;
+      if (!media) return null;
+      const rect = media.getBoundingClientRect();
+      return {
+        renderedRatio: rect.width / rect.height,
+        naturalRatio: media.naturalWidth / media.naturalHeight,
+      };
+    });
+
+    expect(mediaRatio).not.toBeNull();
+    expect(Math.abs((mediaRatio?.renderedRatio || 0) - (mediaRatio?.naturalRatio || 0))).toBeLessThan(0.05);
+  });
+
   test("自定义模式支持单源搜索、上传裁切、本地草稿和直接导图", async ({ page }) => {
     let shareRequestCount = 0;
     page.on("request", (request) => {
@@ -1099,7 +1138,7 @@ test.describe("v3 interaction", () => {
     expect(exportInfo?.qrUrl?.endsWith("/custom")).toBeTruthy();
     expect(exportInfo?.showNames).toBeTruthy();
     expect(exportInfo?.height).toBe(1660);
-    expect(downloadName).toBe("my9-custom.png");
+    expect(downloadName).toBe("构成本地玩家的9部作品.png");
     expect(shareRequestCount).toBe(0);
   });
 });
