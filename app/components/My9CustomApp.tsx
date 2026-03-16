@@ -8,7 +8,6 @@ import { SubjectKindIcon } from "@/components/subject/SubjectKindIcon";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { SupportButton } from "@/components/SupportButton";
-import { CommentDialog } from "@/app/components/v3/CommentDialog";
 import { InlineToast, type ToastKind } from "@/app/components/v3/InlineToast";
 import { CustomActionCluster } from "@/app/components/custom/CustomActionCluster";
 import { CustomImageCropDialog } from "@/app/components/custom/CustomImageCropDialog";
@@ -93,11 +92,6 @@ export default function My9CustomApp() {
   const cropObjectUrlRef = useRef<string | null>(null);
 
   const [previewOpen, setPreviewOpen] = useState(false);
-
-  const [commentOpen, setCommentOpen] = useState(false);
-  const [commentText, setCommentText] = useState("");
-  const [commentSpoiler, setCommentSpoiler] = useState(false);
-  const [commentSlot, setCommentSlot] = useState<number | null>(null);
 
   const [localNoticeOpen, setLocalNoticeOpen] = useState(false);
   const [localNoticeStatus, setLocalNoticeStatus] = useState<ToastState>(null);
@@ -399,29 +393,6 @@ export default function My9CustomApp() {
     pushToast("success", `已填入第 ${targetSlot + 1} 格`);
   }
 
-  function openComment(index: number) {
-    const entry = entries[index];
-    if (!entry) return;
-    setCommentSlot(index);
-    setCommentText(entry.comment || "");
-    setCommentSpoiler(Boolean(entry.spoiler));
-    setCommentOpen(true);
-  }
-
-  function saveComment() {
-    if (commentSlot === null) return;
-    const entry = entries[commentSlot];
-    if (!entry) return;
-
-    updateSlot(commentSlot, {
-      ...entry,
-      comment: commentText.trim().slice(0, 140),
-      spoiler: commentSpoiler,
-    });
-    setCommentOpen(false);
-    pushToast("success", "评论已保存");
-  }
-
   function handleToggleSpoiler(index: number) {
     const entry = entries[index];
     if (!entry || !entry.spoiler) return;
@@ -547,7 +518,6 @@ export default function My9CustomApp() {
             entries={entries}
             onSelectSlot={openSearch}
             onRemoveSlot={(index) => updateSlot(index, null)}
-            onOpenComment={openComment}
             onReorder={handleReorder}
           />
         </div>
@@ -565,7 +535,6 @@ export default function My9CustomApp() {
           entries={entries}
           spoilerExpandedSet={spoilerExpandedSet}
           onToggleSpoiler={handleToggleSpoiler}
-          onOpenComment={openComment}
         />
 
         <SiteFooter className="w-full" kind="custom" />
@@ -624,17 +593,6 @@ export default function My9CustomApp() {
         status={localNoticeStatus}
         onTestDownload={handleTestDownload}
         onCopyLink={handleCopyCustomLink}
-      />
-
-      <CommentDialog
-        open={commentOpen}
-        onOpenChange={setCommentOpen}
-        value={commentText}
-        spoiler={commentSpoiler}
-        description="这些评论只保存在当前浏览器的本地草稿里，不会上传到云端。"
-        onChangeValue={setCommentText}
-        onChangeSpoiler={setCommentSpoiler}
-        onSave={saveComment}
       />
 
       <Dialog open={kindPickerOpen} onOpenChange={setKindPickerOpen}>

@@ -5,21 +5,18 @@ import { AlertTriangle, Globe, MessageCircle } from "lucide-react";
 import {
   CustomEntry,
   getCustomEntryDisplayTitle,
-  getCustomEntrySubtitle,
 } from "@/lib/custom/types";
 
 interface CustomSelectedEntriesListProps {
   entries: Array<CustomEntry | null>;
   spoilerExpandedSet: Set<number>;
   onToggleSpoiler: (index: number) => void;
-  onOpenComment: (index: number) => void;
 }
 
 export function CustomSelectedEntriesList({
   entries,
   spoilerExpandedSet,
   onToggleSpoiler,
-  onOpenComment,
 }: CustomSelectedEntriesListProps) {
   const selected = entries
     .map((entry, index) => ({ index, entry }))
@@ -38,7 +35,6 @@ export function CustomSelectedEntriesList({
 
         {selected.map(({ index, entry }) => {
           const spoilerCollapsed = Boolean(entry.spoiler) && !spoilerExpandedSet.has(index);
-          const subtitle = getCustomEntrySubtitle(entry);
 
           return (
             <article
@@ -72,17 +68,6 @@ export function CustomSelectedEntriesList({
                     {getCustomEntryDisplayTitle(entry)}
                     {entry.releaseYear ? ` (${entry.releaseYear})` : ""}
                   </h3>
-                  {subtitle ? (
-                    <p className="-mt-1 mb-2 whitespace-normal break-words text-xs text-muted-foreground sm:text-sm">
-                      {subtitle}
-                    </p>
-                  ) : null}
-
-                  <div className="mb-2 flex flex-wrap gap-2">
-                    <span className="inline-flex items-center rounded-full border border-border bg-muted px-2 py-0.5 text-[11px] text-muted-foreground">
-                      {entry.sourceLabel}
-                    </span>
-                  </div>
 
                   {entry.comment ? (
                     <div className="mt-1">
@@ -123,9 +108,10 @@ export function CustomSelectedEntriesList({
 
                   <button
                     type="button"
-                    onClick={() => onOpenComment(index)}
-                    className="rounded-md border border-border bg-muted p-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+                    disabled
+                    className="rounded-md border border-border bg-muted p-1.5 text-muted-foreground transition-colors disabled:cursor-not-allowed disabled:opacity-45"
                     aria-label={`编辑第 ${index + 1} 格评论`}
+                    title="评论功能暂未开放"
                   >
                     <MessageCircle className="h-4 w-4" />
                   </button>

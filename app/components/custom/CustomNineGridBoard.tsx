@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import type React from "react";
-import { MessageSquare, Plus, X } from "lucide-react";
+import { Plus, X } from "lucide-react";
 import { DragDropProvider } from "@dnd-kit/react";
 import { Feedback, AutoScroller, Cursor } from "@dnd-kit/dom";
 import { useSortable, isSortable } from "@dnd-kit/react/sortable";
@@ -14,7 +14,6 @@ interface CustomNineGridBoardProps {
   entries: Array<CustomEntry | null>;
   onSelectSlot: (index: number) => void;
   onRemoveSlot: (index: number) => void;
-  onOpenComment: (index: number) => void;
   onReorder: (entries: Array<CustomEntry | null>) => void;
 }
 
@@ -41,7 +40,6 @@ interface GridCellProps {
   isDragSource?: boolean;
   onSelectSlot: (index: number) => void;
   onRemoveSlot: (index: number) => void;
-  onOpenComment: (index: number) => void;
 }
 
 function GridCell({
@@ -50,7 +48,6 @@ function GridCell({
   isDragSource,
   onSelectSlot,
   onRemoveSlot,
-  onOpenComment,
 }: GridCellProps) {
   return (
     <>
@@ -95,17 +92,6 @@ function GridCell({
         <div className="absolute bottom-2 right-2 flex items-center gap-1.5">
           <button
             type="button"
-            aria-label={`编辑第 ${index + 1} 格评论`}
-            onClick={(event) => {
-              event.stopPropagation();
-              onOpenComment(index);
-            }}
-            className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-black/70 text-white transition hover:bg-sky-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/90"
-          >
-            <MessageSquare className="h-4 w-4" />
-          </button>
-          <button
-            type="button"
             aria-label={`移除第 ${index + 1} 格作品`}
             onClick={(event) => {
               event.stopPropagation();
@@ -125,7 +111,6 @@ export function CustomNineGridBoard({
   entries,
   onSelectSlot,
   onRemoveSlot,
-  onOpenComment,
   onReorder,
 }: CustomNineGridBoardProps) {
   const grid = (
@@ -141,7 +126,6 @@ export function CustomNineGridBoard({
                 isDragSource={isDragSource}
                 onSelectSlot={onSelectSlot}
                 onRemoveSlot={onRemoveSlot}
-                onOpenComment={onOpenComment}
               />
             )}
           </SortableSlot>

@@ -11,7 +11,7 @@ export default function HomeKindEntry() {
   const pickerRef = useRef<HTMLDivElement | null>(null);
   const scrollRafRef = useRef<number | null>(null);
   const fillModeMeta = getFillModeMeta(mode);
-  const titlePrefix = mode === "custom" ? "构成我的" : `构成我的九${fillModeMeta.selectionUnit}`;
+  const titlePrefix = mode === "custom" ? "构成我的……" : `构成我的九${fillModeMeta.selectionUnit}`;
   const optionRefs = useRef<Partial<Record<FillMode, HTMLButtonElement | null>>>({});
 
   function scrollKindIntoCenter(targetKind: FillMode, behavior: ScrollBehavior) {
@@ -113,7 +113,7 @@ export default function HomeKindEntry() {
                         }}
                         className={cn(
                           "block w-full snap-center py-2 text-center font-black leading-none tracking-tight transition-colors duration-200 sm:py-3",
-                          item === "lightnovel" || item === "tv"
+                          item === "lightnovel" || item === "tv" || item === "custom"
                             ? "text-[1.68rem] sm:text-[2.35rem]"
                             : "text-[2.08rem] sm:text-[3rem]",
                           active ? "text-foreground" : "text-muted-foreground hover:text-foreground"
