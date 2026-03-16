@@ -29,6 +29,16 @@
   "triggers": {
     "crons": ["5 16 * * *"]
   },
+  "vars": {
+    "MY9_SHARE_VIEW_ANALYTICS_DATASET": "my9_share_views_v1",
+    "MY9_SHARE_VIEW_ROLLUP_DAYS": "2"
+  },
+  "analytics_engine_datasets": [
+    {
+      "binding": "MY9_SHARE_VIEW_ANALYTICS",
+      "dataset": "my9_share_views_v1"
+    }
+  ],
   "r2_buckets": [
     {
       "binding": "MY9_COLD_STORAGE",
@@ -41,6 +51,16 @@
         {
           "pattern": "my9test.shatranj.space",
           "custom_domain": true
+        }
+      ],
+      "vars": {
+        "MY9_SHARE_VIEW_ANALYTICS_DATASET": "my9_share_views_test_v1",
+        "MY9_SHARE_VIEW_ROLLUP_DAYS": "2"
+      },
+      "analytics_engine_datasets": [
+        {
+          "binding": "MY9_SHARE_VIEW_ANALYTICS",
+          "dataset": "my9_share_views_test_v1"
         }
       ],
       "assets": {

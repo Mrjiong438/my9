@@ -16,6 +16,8 @@ const SECRET_KEYS = [
   "BANGUMI_ACCESS_TOKEN",
   "BANGUMI_USER_AGENT",
   "CRON_SECRET",
+  "MY9_ANALYTICS_ACCOUNT_ID",
+  "MY9_ANALYTICS_API_TOKEN",
   "MY9_ALLOW_MEMORY_FALLBACK",
   "MY9_ARCHIVE_BATCH_SIZE",
   "MY9_ARCHIVE_CLEANUP_TREND_DAYS",
@@ -90,19 +92,36 @@ function resolveSiteUrl(targetEnv) {
 function buildSecrets(targetEnv) {
   const siteUrl = resolveSiteUrl(targetEnv);
   const secrets = {};
+  const analyticsAccountId = process.env.MY9_ANALYTICS_ACCOUNT_ID ?? process.env.CLOUDFLARE_ACCOUNT_ID;
+  const analyticsApiToken = process.env.MY9_ANALYTICS_API_TOKEN ?? process.env.CLOUDFLARE_API_TOKEN;
 
   for (const key of SECRET_KEYS) {
-    const value =
-      key === "SITE_URL" || key === "NEXT_PUBLIC_SITE_URL"
-        ? siteUrl
-        : process.env[key];
+    const value = (() => {
+      if (key === "SITE_URL" || key === "NEXT_PUBLIC_SITE_URL") {
+        return siteUrl;
+      }
+      if (key === "MY9_ANALYTICS_ACCOUNT_ID") {
+        return analyticsAccountId;
+      }
+      if (key === "MY9_ANALYTICS_API_TOKEN") {
+        return analyticsApiToken;
+      }
+      return process.env[key];
+    })();
 
     if (typeof value === "string" && value.trim()) {
       secrets[key] = value.trim();
     }
   }
 
-  return { secrets, siteUrl };
+  return {
+    secrets,
+    siteUrl,
+    usingCloudflareApiTokenFallback:
+      !process.env.MY9_ANALYTICS_API_TOKEN &&
+      typeof process.env.CLOUDFLARE_API_TOKEN === "string" &&
+      process.env.CLOUDFLARE_API_TOKEN.trim().length > 0,
+  };
 }
 
 function run(command, args) {
@@ -128,7 +147,7 @@ async function main() {
   loadLocalEnvFiles();
 
   const targetEnv = resolveTargetEnv();
-  const { secrets, siteUrl } = buildSecrets(targetEnv);
+  const { secrets, siteUrl, usingCloudflareApiTokenFallback } = buildSecrets(targetEnv);
   const names = Object.keys(secrets).sort();
 
   if (names.length === 0) {
@@ -142,6 +161,11 @@ async function main() {
     await writeFile(tempFile, JSON.stringify(secrets, null, 2), "utf8");
     console.log(`[cf:sync-secrets] target=${targetEnv} siteUrl=${siteUrl}`);
     console.log(`[cf:sync-secrets] uploading ${names.length} keys: ${names.join(", ")}`);
+    if (usingCloudflareApiTokenFallback) {
+      console.warn(
+        "[cf:sync-secrets] MY9_ANALYTICS_API_TOKEN is missing; falling back to CLOUDFLARE_API_TOKEN for runtime Analytics Engine rollup"
+      );
+    }
 
     const args = ["wrangler", "secret", "bulk", tempFile];
     if (targetEnv === "test") {

@@ -1,17 +1,20 @@
-import { runShareArchive } from "./lib/share/archive";
+import { runDailyShareMaintenance } from "./lib/share/daily-maintenance";
+import { trackShareViewRequest } from "./lib/share/view-stats";
 import openNextWorker from "./.open-next/worker.js";
 
 const worker = {
   fetch(request, env, ctx) {
+    trackShareViewRequest(request, env.MY9_SHARE_VIEW_ANALYTICS ?? null);
     return openNextWorker.fetch(request, env, ctx);
   },
   scheduled(controller, env, ctx) {
     ctx.waitUntil(
-      runShareArchive({
+      runDailyShareMaintenance({
         coldStorageBucket: env.MY9_COLD_STORAGE ?? null,
-        logLabel: `[archive-cron:${controller.cron}]`,
+        env,
+        logLabel: `[daily-cron:${controller.cron}]`,
       }).catch((error) => {
-        console.error("[archive-cron] failed", error);
+        console.error("[daily-cron] failed", error);
         throw error;
       })
     );
