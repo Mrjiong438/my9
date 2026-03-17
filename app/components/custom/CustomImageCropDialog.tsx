@@ -65,6 +65,7 @@ export function CustomImageCropDialog({
   const [crop, setCrop] = useState({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(1);
   const [croppedAreaPixels, setCroppedAreaPixels] = useState<Area | null>(null);
+  const [cropperReady, setCropperReady] = useState(false);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -74,6 +75,19 @@ export function CustomImageCropDialog({
     setCroppedAreaPixels(null);
     setSaving(false);
   }, [open, imageSrc]);
+
+  useEffect(() => {
+    if (!open || !imageSrc) {
+      setCropperReady(false);
+      return;
+    }
+
+    // react-easy-crop measures immediately on mount; delay until the dialog
+    // finishes its Radix/Tailwind entry transition to avoid stale 95% sizing.
+    setCropperReady(false);
+    const timer = window.setTimeout(() => setCropperReady(true), 220);
+    return () => window.clearTimeout(timer);
+  }, [imageSrc, open]);
 
   async function handleConfirm() {
     if (!imageSrc || !croppedAreaPixels) return;
@@ -88,14 +102,14 @@ export function CustomImageCropDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="w-[96vw] max-w-3xl rounded-2xl p-4 data-[state=open]:zoom-in-100 data-[state=closed]:zoom-out-100 sm:p-6">
+      <DialogContent className="w-[96vw] max-w-3xl rounded-2xl p-4 data-[state=open]:animate-none data-[state=closed]:animate-none sm:p-6">
         <DialogHeader>
           <DialogTitle>裁切上传图片</DialogTitle>
         </DialogHeader>
 
         <div className="space-y-4">
           <div className="relative h-[52vh] min-h-[320px] overflow-hidden rounded-2xl bg-slate-950">
-            {imageSrc ? (
+            {imageSrc && cropperReady ? (
               <Cropper
                 image={imageSrc}
                 crop={crop}

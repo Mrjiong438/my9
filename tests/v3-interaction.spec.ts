@@ -1000,7 +1000,7 @@ test.describe("v3 interaction", () => {
     });
 
     await expect(page.getByRole("heading", { name: "裁切上传图片" })).toBeVisible();
-    await page.waitForTimeout(250);
+    await expect(page.locator(".reactEasyCrop_Image")).toBeVisible();
 
     const mediaRatio = await page.evaluate(() => {
       const media = document.querySelector(".reactEasyCrop_Image") as HTMLImageElement | null;
@@ -1030,15 +1030,19 @@ test.describe("v3 interaction", () => {
     });
 
     await expect(page.getByRole("heading", { name: "裁切上传图片" })).toBeVisible();
-    await page.waitForTimeout(250);
+    await expect(page.locator(".reactEasyCrop_Image")).toBeVisible();
 
     const sizeInfo = await page.evaluate(() => {
       const media = document.querySelector(".reactEasyCrop_Image") as HTMLImageElement | null;
       const cropArea = document.querySelector(".reactEasyCrop_CropArea") as HTMLDivElement | null;
-      if (!media || !cropArea) return null;
+      const container = document.querySelector(".reactEasyCrop_Container") as HTMLDivElement | null;
+      if (!media || !cropArea || !container) return null;
       const mediaRect = media.getBoundingClientRect();
       const cropRect = cropArea.getBoundingClientRect();
+      const containerRect = container.getBoundingClientRect();
       return {
+        containerWidth: containerRect.width,
+        containerHeight: containerRect.height,
         mediaWidth: mediaRect.width,
         mediaHeight: mediaRect.height,
         cropWidth: cropRect.width,
