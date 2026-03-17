@@ -17,6 +17,12 @@ const donationAcknowledgements: Array<{
   amount: string;
   message: string;
 }> = [
+  { date: "2026-03-17", name: "匿名", amount: "10", message: "好多专辑搜不到……TT" },
+  { date: "2026-03-17", name: "匿名", amount: "10", message: "想看我的英雄學院小众角色" },
+  { date: "2026-03-17", name: "z13", amount: "3", message: "轻小说想找再生勇士没找到有点可惜，但是已经很好了，加油！" },
+  { date: "2026-03-17", name: "匿名", amount: "1", message: "ww感谢" },
+  { date: "2026-03-17", name: "Felix🔥", amount: "3", message: "" },
+  { date: "2026-03-17", name: "烂神植旭富", amount: "3", message: "为爱发电，支持一下" },
   { date: "2026-03-16", name: "匿名", amount: "1", message: "" },
   { date: "2026-03-16", name: "釿緸", amount: "10", message: "👍" },
   { date: "2026-03-16", name: "早", amount: "3", message: "" },
