@@ -17,6 +17,7 @@ const donationAcknowledgements: Array<{
   amount: string;
   message: string;
 }> = [
+  { date: "2026-03-18", name: "Recroaed", amount: "3", message: "" },
   { date: "2026-03-17", name: "匿名", amount: "10", message: "好多专辑搜不到……TT" },
   { date: "2026-03-17", name: "匿名", amount: "10", message: "想看我的英雄學院小众角色" },
   { date: "2026-03-17", name: "z13", amount: "3", message: "轻小说想找再生勇士没找到有点可惜，但是已经很好了，加油！" },
