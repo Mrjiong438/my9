@@ -58,13 +58,15 @@ export interface StorageBackend {
     value: TrendResponse,
     ttlSeconds?: number
   ): Promise<void>;
+  getShareViewRollupCheckpoint(): Promise<number | null>;
+  setShareViewRollupCheckpoint(checkpointMs: number): Promise<void>;
   upsertShareViewTotalCounts(
     rows: Array<{
       shareId: string;
       kind: SubjectKind;
       viewCount: number;
     }>,
-    options?: { lastAggregatedAt?: number }
+    options?: { lastAggregatedAt?: number; mode?: "replace" | "increment" }
   ): Promise<number>;
   cleanupOldTrendCounts(params?: {
     cleanupTrendDays?: number;

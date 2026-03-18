@@ -1,5 +1,9 @@
 import { normalizeShareId } from "@/lib/share/id";
-import { upsertShareViewTotalCounts } from "@/lib/share/storage";
+import {
+  getShareViewRollupCheckpoint,
+  setShareViewRollupCheckpoint,
+  upsertShareViewTotalCounts,
+} from "@/lib/share/storage";
 import { parseSubjectKind, type SubjectKind } from "@/lib/subject-kind";
 
 const ANALYTICS_SQL_API_BASE = "https://api.cloudflare.com/client/v4";
@@ -187,15 +191,24 @@ async function queryShareViewTotals(
   accountId: string,
   apiToken: string,
   dataset: string,
-  endMs: number
+  endMs: number,
+  startMs?: number | null
 ): Promise<ShareViewRollupRow[]> {
+  if (typeof startMs === "number" && Number.isFinite(startMs) && startMs >= endMs) {
+    return [];
+  }
+
+  const timeFilter =
+    typeof startMs === "number" && Number.isFinite(startMs)
+      ? `timestamp >= toDateTime('${toSqlUtcDateTime(startMs)}') AND timestamp < toDateTime('${toSqlUtcDateTime(endMs)}')`
+      : `timestamp < toDateTime('${toSqlUtcDateTime(endMs)}')`;
   const query = `
 SELECT
   index1 AS share_id,
   blob1 AS kind,
   SUM(_sample_interval * double1) AS view_count
 FROM ${assertDatasetName(dataset)}
-WHERE timestamp < toDateTime('${toSqlUtcDateTime(endMs)}')
+WHERE ${timeFilter}
 GROUP BY index1, blob1
 FORMAT JSONEachRow
 `.trim();
@@ -248,7 +261,12 @@ export async function runShareViewRollup(options?: {
 
   const nowMs = options?.nowMs ?? Date.now();
   const currentDayStart = getBeijingDayStart(nowMs);
-  const rows = await queryShareViewTotals(config.accountId, config.apiToken, dataset, currentDayStart);
+  const lastCheckpointMs = await getShareViewRollupCheckpoint();
+  const startMs =
+    typeof lastCheckpointMs === "number" && Number.isFinite(lastCheckpointMs)
+      ? Math.min(currentDayStart, getBeijingDayStart(lastCheckpointMs))
+      : null;
+  const rows = await queryShareViewTotals(config.accountId, config.apiToken, dataset, currentDayStart, startMs);
   const rowsFetched = rows.length;
   const rowsWritten = await upsertShareViewTotalCounts(
     rows.map((row) => ({
@@ -258,8 +276,10 @@ export async function runShareViewRollup(options?: {
     })),
     {
       lastAggregatedAt: nowMs,
+      mode: startMs === null ? "replace" : "increment",
     }
   );
+  await setShareViewRollupCheckpoint(currentDayStart);
 
   const result: ShareViewRollupResult = {
     ok: true,

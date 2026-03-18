@@ -80,13 +80,21 @@ export function setTrendsCache(
   return d1StorageBackend.setTrendsCache(period, view, kind, overallPage, yearPage, value, ttlSeconds);
 }
 
+export function getShareViewRollupCheckpoint() {
+  return d1StorageBackend.getShareViewRollupCheckpoint();
+}
+
+export function setShareViewRollupCheckpoint(checkpointMs: number) {
+  return d1StorageBackend.setShareViewRollupCheckpoint(checkpointMs);
+}
+
 export function upsertShareViewTotalCounts(
   rows: Array<{
     shareId: string;
     kind: SubjectKind;
     viewCount: number;
   }>,
-  options?: { lastAggregatedAt?: number }
+  options?: { lastAggregatedAt?: number; mode?: "replace" | "increment" }
 ) {
   return d1StorageBackend.upsertShareViewTotalCounts(rows, options);
 }

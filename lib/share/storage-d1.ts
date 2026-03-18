@@ -32,6 +32,7 @@ import {
   getBeijingDayStart,
   isTrendCacheExpired,
   normalizeStoredShare,
+  parseStringArray,
   parseJsonValue,
   parsePositiveInt,
   parseTrendPayload,
@@ -83,10 +84,200 @@ type RankedTrendBucketRow = TrendSubjectQueryRow & {
   bucket_total: number | string;
 };
 
+type SubjectGenreRow = {
+  subject_id: string;
+  genre: string;
+};
+
+type ShareViewRollupCheckpointRow = {
+  payload: unknown;
+};
+
+type ShareViewAggregationRow = {
+  last_aggregated_at: number | string | null;
+};
+
 const GROUPED_TOP_GAMES_LIMIT = 5;
+const SHARE_VIEW_ROLLUP_CHECKPOINT_KEY = "system:share-view-rollup:v1";
+const SYSTEM_CACHE_PERIOD = "__system__";
+const SYSTEM_CACHE_VIEW = "__share_view_rollup__";
+const SYSTEM_CACHE_KIND = "__system__";
 
 function resolveCompactPayload(row: ShareRegistryRow) {
   return normalizeCompactPayload(parseJsonValue<unknown>(row.hot_payload));
+}
+
+function toOptionalNumber(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return Math.trunc(value);
+  }
+  if (typeof value === "string") {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) {
+      return Math.trunc(parsed);
+    }
+  }
+  return null;
+}
+
+function normalizeGenreList(genres: string[] | undefined): string[] {
+  return Array.from(new Set((genres ?? []).map((genre) => genre.trim()).filter(Boolean))).sort((a, b) =>
+    a.localeCompare(b)
+  );
+}
+
+function areStringArraysEqual(left: string[], right: string[]) {
+  if (left.length !== right.length) {
+    return false;
+  }
+  return left.every((value, index) => value === right[index]);
+}
+
+async function fetchExistingSubjectDimRows(db: D1DatabaseLike, kind: SubjectKind, subjectIds: string[]) {
+  const rowsById = new Map<string, SubjectDimRow>();
+  for (const ids of chunkArray(subjectIds, 300)) {
+    if (ids.length === 0) continue;
+    const rows = await queryAll<SubjectDimRow>(
+      db,
+      `
+      SELECT subject_id, name, localized_name, cover, release_year, genres
+      FROM ${SUBJECT_DIM_TABLE}
+      WHERE kind = ?
+        AND subject_id IN (${buildPlaceholders(ids.length)})
+      `,
+      [kind, ...ids]
+    );
+    for (const row of rows) {
+      rowsById.set(row.subject_id, row);
+    }
+  }
+  return rowsById;
+}
+
+async function fetchExistingSubjectGenres(db: D1DatabaseLike, kind: SubjectKind, subjectIds: string[]) {
+  const rowsById = new Map<string, string[]>();
+  for (const ids of chunkArray(subjectIds, 300)) {
+    if (ids.length === 0) continue;
+    const rows = await queryAll<SubjectGenreRow>(
+      db,
+      `
+      SELECT subject_id, genre
+      FROM ${SUBJECT_GENRE_DIM_TABLE}
+      WHERE kind = ?
+        AND subject_id IN (${buildPlaceholders(ids.length)})
+      `,
+      [kind, ...ids]
+    );
+    for (const row of rows) {
+      const current = rowsById.get(row.subject_id);
+      if (current) {
+        current.push(row.genre);
+      } else {
+        rowsById.set(row.subject_id, [row.genre]);
+      }
+    }
+  }
+  for (const [subjectId, genres] of rowsById) {
+    rowsById.set(subjectId, normalizeGenreList(genres));
+  }
+  return rowsById;
+}
+
+function buildSubjectDimStatement(params: {
+  kind: SubjectKind;
+  snapshot: ReturnType<typeof toSubjectSnapshot>;
+  existingRow?: SubjectDimRow;
+  updatedAt: number;
+}): StatementInput | null {
+  const existingRow = params.existingRow;
+  const desiredGenres = normalizeGenreList(params.snapshot.genres);
+  const existingGenres = normalizeGenreList(existingRow ? parseStringArray(existingRow.genres) : undefined);
+  const desiredLocalizedName = params.snapshot.localizedName ?? existingRow?.localized_name ?? null;
+  const desiredCover = params.snapshot.cover ?? existingRow?.cover ?? null;
+  const desiredReleaseYear = params.snapshot.releaseYear ?? toOptionalNumber(existingRow?.release_year);
+  const mergedGenres = params.snapshot.genres ? desiredGenres : existingGenres;
+
+  if (
+    existingRow &&
+    existingRow.name === params.snapshot.name &&
+    (existingRow.localized_name ?? null) === desiredLocalizedName &&
+    (existingRow.cover ?? null) === desiredCover &&
+    toOptionalNumber(existingRow.release_year) === desiredReleaseYear &&
+    areStringArraysEqual(existingGenres, mergedGenres)
+  ) {
+    return null;
+  }
+
+  return {
+    sql: `
+    INSERT INTO ${SUBJECT_DIM_TABLE} (
+      kind, subject_id, name, localized_name, cover, release_year, genres, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT (kind, subject_id) DO UPDATE SET
+      name = excluded.name,
+      localized_name = excluded.localized_name,
+      cover = excluded.cover,
+      release_year = excluded.release_year,
+      genres = excluded.genres,
+      updated_at = excluded.updated_at
+    `,
+    params: [
+      params.kind,
+      params.snapshot.subjectId,
+      params.snapshot.name,
+      desiredLocalizedName,
+      desiredCover,
+      desiredReleaseYear,
+      mergedGenres.length > 0 ? JSON.stringify(mergedGenres) : null,
+      params.updatedAt,
+    ],
+  };
+}
+
+function buildSubjectGenreStatements(params: {
+  kind: SubjectKind;
+  snapshot: ReturnType<typeof toSubjectSnapshot>;
+  existingGenres?: string[];
+  updatedAt: number;
+}): StatementInput[] {
+  if (!params.snapshot.genres) {
+    return [];
+  }
+
+  const desiredGenres = normalizeGenreList(params.snapshot.genres);
+  const existingGenres = normalizeGenreList(params.existingGenres);
+  const existingGenreSet = new Set(existingGenres);
+  const desiredGenreSet = new Set(desiredGenres);
+  const toDelete = existingGenres.filter((genre) => !desiredGenreSet.has(genre));
+  const toInsert = desiredGenres.filter((genre) => !existingGenreSet.has(genre));
+
+  if (toDelete.length === 0 && toInsert.length === 0) {
+    return [];
+  }
+
+  return [
+    ...(toDelete.length > 0
+      ? [
+          {
+            sql: `
+            DELETE FROM ${SUBJECT_GENRE_DIM_TABLE}
+            WHERE kind = ?
+              AND subject_id = ?
+              AND genre IN (${buildPlaceholders(toDelete.length)})
+            `,
+            params: [params.kind, params.snapshot.subjectId, ...toDelete],
+          } satisfies StatementInput,
+        ]
+      : []),
+    ...toInsert.map<StatementInput>((genre) => ({
+      sql: `
+      INSERT OR IGNORE INTO ${SUBJECT_GENRE_DIM_TABLE} (
+        kind, subject_id, genre, updated_at
+      ) VALUES (?, ?, ?, ?)
+      `,
+      params: [params.kind, params.snapshot.subjectId, genre, params.updatedAt],
+    })),
+  ];
 }
 
 async function fetchSubjectSnapshots(db: D1DatabaseLike, kind: SubjectKind, subjectIds: string[]) {
@@ -426,11 +617,35 @@ const d1StorageBackend: StorageBackend = {
       createdAt: normalizedRecord.createdAt,
     });
     const subjectRows = Array.from(subjectSnapshots.values());
-    const genreRows = subjectRows.flatMap((snapshot) =>
-      (snapshot.genres ?? []).map((genre) => ({
-        subjectId: snapshot.subjectId,
-        genre,
-      }))
+    const existingSubjectRows = await fetchExistingSubjectDimRows(
+      db,
+      normalizedRecord.kind,
+      subjectRows.map((snapshot) => snapshot.subjectId)
+    );
+    const existingSubjectGenres = await fetchExistingSubjectGenres(
+      db,
+      normalizedRecord.kind,
+      subjectRows
+        .filter((snapshot) => Boolean(snapshot.genres))
+        .map((snapshot) => snapshot.subjectId)
+    );
+    const subjectDimStatements = subjectRows
+      .map((snapshot) =>
+        buildSubjectDimStatement({
+          kind: normalizedRecord.kind,
+          snapshot,
+          existingRow: existingSubjectRows.get(snapshot.subjectId),
+          updatedAt: normalizedRecord.updatedAt,
+        })
+      )
+      .filter((statement): statement is StatementInput => Boolean(statement));
+    const subjectGenreStatements = subjectRows.flatMap((snapshot) =>
+      buildSubjectGenreStatements({
+        kind: normalizedRecord.kind,
+        snapshot,
+        existingGenres: existingSubjectGenres.get(snapshot.subjectId),
+        updatedAt: normalizedRecord.updatedAt,
+      })
     );
     const slotRows = payload.flatMap((slot, slotIndex) =>
       slot
@@ -461,46 +676,8 @@ const d1StorageBackend: StorageBackend = {
           normalizedRecord.lastViewedAt,
         ],
       },
-      ...subjectRows.map<StatementInput>((snapshot) => ({
-        sql: `
-        INSERT INTO ${SUBJECT_DIM_TABLE} (
-          kind, subject_id, name, localized_name, cover, release_year, genres, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT (kind, subject_id) DO UPDATE SET
-          name = excluded.name,
-          localized_name = COALESCE(excluded.localized_name, ${SUBJECT_DIM_TABLE}.localized_name),
-          cover = COALESCE(excluded.cover, ${SUBJECT_DIM_TABLE}.cover),
-          release_year = COALESCE(excluded.release_year, ${SUBJECT_DIM_TABLE}.release_year),
-          genres = COALESCE(excluded.genres, ${SUBJECT_DIM_TABLE}.genres),
-          updated_at = excluded.updated_at
-        `,
-        params: [
-          normalizedRecord.kind,
-          snapshot.subjectId,
-          snapshot.name,
-          snapshot.localizedName ?? null,
-          snapshot.cover,
-          snapshot.releaseYear ?? null,
-          snapshot.genres && snapshot.genres.length > 0 ? JSON.stringify(snapshot.genres) : null,
-          normalizedRecord.updatedAt,
-        ],
-      })),
-      ...subjectRows.map<StatementInput>((snapshot) => ({
-        sql: `
-        DELETE FROM ${SUBJECT_GENRE_DIM_TABLE}
-        WHERE kind = ?
-          AND subject_id = ?
-        `,
-        params: [normalizedRecord.kind, snapshot.subjectId],
-      })),
-      ...genreRows.map<StatementInput>((row) => ({
-        sql: `
-        INSERT OR IGNORE INTO ${SUBJECT_GENRE_DIM_TABLE} (
-          kind, subject_id, genre, updated_at
-        ) VALUES (?, ?, ?, ?)
-        `,
-        params: [normalizedRecord.kind, row.subjectId, row.genre, normalizedRecord.updatedAt],
-      })),
+      ...subjectDimStatements,
+      ...subjectGenreStatements,
       ...slotRows.map<StatementInput>((row) => ({
         sql: `
         INSERT INTO ${SHARE_SUBJECT_SLOT_TABLE} (
@@ -935,6 +1112,72 @@ const d1StorageBackend: StorageBackend = {
     );
   },
 
+  async getShareViewRollupCheckpoint() {
+    const db = await getD1Database();
+    if (!db || !(await ensureD1Schema())) {
+      throw new Error("getShareViewRollupCheckpoint failed: d1 is not ready");
+    }
+
+    const checkpointRow = await queryFirst<ShareViewRollupCheckpointRow>(
+      db,
+      `
+      SELECT payload
+      FROM ${TRENDS_CACHE_TABLE}
+      WHERE cache_key = ?
+      LIMIT 1
+      `,
+      [SHARE_VIEW_ROLLUP_CHECKPOINT_KEY]
+    );
+    const parsedPayload = parseJsonValue<{ rolledThroughMs?: number | string }>(checkpointRow?.payload);
+    const checkpointMs = toOptionalNumber(parsedPayload?.rolledThroughMs);
+    if (checkpointMs !== null) {
+      return checkpointMs;
+    }
+
+    const fallbackRow = await queryFirst<ShareViewAggregationRow>(
+      db,
+      `
+      SELECT MAX(last_aggregated_at) AS last_aggregated_at
+      FROM ${SHARE_VIEW_TOTAL_TABLE}
+      `
+    );
+    return toOptionalNumber(fallbackRow?.last_aggregated_at);
+  },
+
+  async setShareViewRollupCheckpoint(checkpointMs) {
+    const db = await getD1Database();
+    if (!db || !(await ensureD1Schema())) {
+      throw new Error("setShareViewRollupCheckpoint failed: d1 is not ready");
+    }
+
+    const updatedAt = Date.now();
+    const expiresAt = checkpointMs + 10 * 365 * 24 * 60 * 60 * 1000;
+    await execute(
+      db,
+      `
+      INSERT INTO ${TRENDS_CACHE_TABLE} (
+        cache_key, period, view, kind, payload, expires_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT (cache_key) DO UPDATE SET
+        period = excluded.period,
+        view = excluded.view,
+        kind = excluded.kind,
+        payload = excluded.payload,
+        expires_at = excluded.expires_at,
+        updated_at = excluded.updated_at
+      `,
+      [
+        SHARE_VIEW_ROLLUP_CHECKPOINT_KEY,
+        SYSTEM_CACHE_PERIOD,
+        SYSTEM_CACHE_VIEW,
+        SYSTEM_CACHE_KIND,
+        JSON.stringify({ rolledThroughMs: checkpointMs }),
+        expiresAt,
+        updatedAt,
+      ]
+    );
+  },
+
   async upsertShareViewTotalCounts(rows, options) {
     const normalizedRows = rows
       .map((row) => ({
@@ -960,6 +1203,7 @@ const d1StorageBackend: StorageBackend = {
     const lastAggregatedAt = Number.isFinite(options?.lastAggregatedAt)
       ? Math.trunc(options?.lastAggregatedAt ?? Date.now())
       : Date.now();
+    const mode = options?.mode === "increment" ? "increment" : "replace";
     const folded = new Map<string, { shareId: string; kind: SubjectKind; viewCount: number }>();
     for (const row of normalizedRows) {
       const key = `${row.shareId}:${row.kind}`;
@@ -1032,7 +1276,7 @@ const d1StorageBackend: StorageBackend = {
         ) VALUES (?, ?, ?, ?)
         ON CONFLICT (share_id) DO UPDATE SET
           kind = excluded.kind,
-          view_count = excluded.view_count,
+          view_count = ${mode === "increment" ? `${SHARE_VIEW_TOTAL_TABLE}.view_count + excluded.view_count` : "excluded.view_count"},
           last_aggregated_at = excluded.last_aggregated_at
         `,
         params: [row.shareId, row.kind, row.viewCount, lastAggregatedAt],
