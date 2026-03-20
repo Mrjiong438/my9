@@ -657,35 +657,21 @@ async function fetchTrendRollupSourceRows(
     `
     SELECT share_id, kind, slot_index, subject_id, created_at, day_key, hour_bucket
     FROM ${SHARE_SUBJECT_SLOT_TABLE}
-    WHERE created_at > ?
-      OR (created_at = ? AND share_id > ?)
-      OR (created_at = ? AND share_id = ? AND slot_index > ?)
+    WHERE (created_at, share_id, slot_index) > (?, ?, ?)
     ORDER BY created_at ASC, share_id ASC, slot_index ASC
     LIMIT ?
     `,
-    [
-      checkpoint.createdAt,
-      checkpoint.createdAt,
-      checkpoint.shareId,
-      checkpoint.createdAt,
-      checkpoint.shareId,
-      checkpoint.slotIndex,
-      limit,
-    ]
+    [checkpoint.createdAt, checkpoint.shareId, checkpoint.slotIndex, limit]
   );
 }
 
 function buildTrendRollupRangeWhereClause(start: TrendRollupCheckpoint | null, end: TrendRollupCheckpoint) {
-  const endParams = [end.createdAt, end.createdAt, end.shareId, end.createdAt, end.shareId, end.slotIndex];
+  const endParams = [end.createdAt, end.shareId, end.slotIndex];
 
   if (!start) {
     return {
       sql: `
-      (
-        created_at < ?
-        OR (created_at = ? AND share_id < ?)
-        OR (created_at = ? AND share_id = ? AND slot_index <= ?)
-      )
+      (created_at, share_id, slot_index) <= (?, ?, ?)
       `,
       params: endParams,
     };
@@ -693,21 +679,10 @@ function buildTrendRollupRangeWhereClause(start: TrendRollupCheckpoint | null, e
 
   return {
     sql: `
-    (
-      created_at > ?
-      OR (created_at = ? AND share_id > ?)
-      OR (created_at = ? AND share_id = ? AND slot_index > ?)
-    )
-    AND (
-      created_at < ?
-      OR (created_at = ? AND share_id < ?)
-      OR (created_at = ? AND share_id = ? AND slot_index <= ?)
-    )
+    (created_at, share_id, slot_index) > (?, ?, ?)
+    AND (created_at, share_id, slot_index) <= (?, ?, ?)
     `,
     params: [
-      start.createdAt,
-      start.createdAt,
-      start.shareId,
       start.createdAt,
       start.shareId,
       start.slotIndex,

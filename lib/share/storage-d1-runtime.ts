@@ -88,6 +88,8 @@ CREATE TABLE IF NOT EXISTS ${SHARE_SUBJECT_SLOT_TABLE} (
   hour_bucket INTEGER NOT NULL,
   PRIMARY KEY (share_id, slot_index)
 );
+CREATE INDEX IF NOT EXISTS ${SHARE_SUBJECT_SLOT_TABLE}_created_share_slot_idx
+ON ${SHARE_SUBJECT_SLOT_TABLE} (created_at, share_id, slot_index);
 CREATE TABLE IF NOT EXISTS ${TREND_COUNT_ALL_TABLE} (
   kind TEXT NOT NULL,
   subject_id TEXT NOT NULL,

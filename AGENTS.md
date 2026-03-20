@@ -77,6 +77,14 @@
   - `MY9_SHARE_VIEW_ANALYTICS`（Workers Analytics Engine）
   - `ASSETS`（静态资源）
 - Cloudflare 部署认证统一使用 account token，不再使用全局 `CLOUDFLARE_API_KEY`。
+- 本地默认只放只读或低风险 Cloudflare token；不要在 `.env.local` 长期保存可直接写生产 D1 的 token。
+- 若确实需要生产写 token（如 D1 migration、全量/增量重建、批量清理、直接 SQL 写入），必须由开发者临时提供；任务完成后应恢复到只读 token。
+- 自动化代理在索要任何生产写 token 之前，必须先向用户明确说明：
+  - 需要该 token 的具体操作和目标环境
+  - 预计会触发的写入类型（如建索引、批量 upsert、重建聚合表、删除旧数据）
+  - 预计写入量级；至少给出“预计写入行数/索引覆盖行数/是否可能达到百万级以上”的测算
+  - 为什么现有只读 token 不足以完成该操作
+- 若无法先完成写入量测算，自动化代理不得直接索要生产写 token；必须先说明缺失的观测数据和最坏情况范围。
 - 分享图封面当前通过 `wsrv.nl` 在前端拉取并绘制；修改该链路时需评估跨域与流量成本影响。
 - 严禁提交任何真实密钥（Cloudflare/R2/CRON）。若误泄露，必须立即旋转并更新环境变量。
 - OpenNext Cloudflare 当前不建议把原生 Windows PowerShell 作为正式构建/部署环境；发布前至少在 Linux CI 或 WSL2 上验证一次 `npm run cf:build`。
@@ -84,6 +92,11 @@
 ## 分享存储 v2 运维
 - 当前运行时为 D1-only；分享写入、读取、趋势聚合、浏览量总表、cron 清理都只依赖 D1。
 - D1 schema 通过 `migrations/d1` 维护；新库先执行 `npm run d1:migrate:local` / `npm run d1:migrate:remote`。
+- 任何可能对生产 D1 造成大规模写入的操作都视为高风险，包括但不限于：
+  - `npm run d1:migrate:remote`
+  - `npm run d1:rebuild-trends`
+  - 直接对生产 D1 执行 `CREATE INDEX` / `DROP INDEX` / 大范围 `DELETE` / `INSERT ... SELECT`
+- 自动化代理在执行上述高风险操作前，必须先做写入量级评估并向用户说明；未获得用户明确确认，不得自行执行。
 - 趋势重建使用 `npm run d1:rebuild-trends`，输入事实表为 `my9_share_subject_slot_v1`，输出为 `my9_trend_subject_kind_*_v3`。
 - Cloudflare Workers Cron 现在有两条：
   - `30 * * * *`：按小时增量 rollup `my9_share_subject_slot_v1` 到 `my9_trend_subject_kind_*_v3`
