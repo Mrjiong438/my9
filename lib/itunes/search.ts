@@ -7,6 +7,8 @@ const ITUNES_RETRY_MAX_ATTEMPTS = 3;
 const ITUNES_RETRY_BASE_DELAY_MS = 300;
 const ITUNES_RETRY_MAX_DELAY_MS = 10 * 1000;
 const ITUNES_RETRYABLE_STATUS = new Set([403, 408, 425, 429, 500, 502, 503, 504]);
+const ITUNES_RELEVANT_MATCH_SCORE = 25;
+const ITUNES_ALBUM_FALLBACK_TRACK_LIMIT = 40;
 
 type ItunesTrackResult = {
   wrapperType: string;
@@ -39,6 +41,16 @@ type ItunesCollectionResult = {
 
 type ItunesSearchResult = ItunesTrackResult | ItunesCollectionResult;
 
+type ItunesAlbumLikeResult = {
+  artistName: string;
+  collectionId: number;
+  collectionName: string;
+  artworkUrl100?: string;
+  releaseDate?: string;
+  primaryGenreName?: string;
+  collectionViewUrl?: string;
+};
+
 export type ItunesMixedSearchResult = {
   songs: ShareSubject[];
   albums: ShareSubject[];
@@ -65,6 +77,23 @@ function extractYear(raw?: string | null): number | undefined {
 
 function normalizeText(value: string): string {
   return value.trim().toLowerCase().replace(/\s+/g, "");
+}
+
+function tokenizeText(value: string): string[] {
+  if (!value.trim()) {
+    return [];
+  }
+
+  return Array.from(
+    new Set(
+      value
+        .trim()
+        .toLowerCase()
+        .split(/[\s\-_/,:;|&()[\]{}"'`~!@#$%^*+=?.<>\\]+/)
+        .map((token) => token.trim())
+        .filter((token) => token.length > 1)
+    )
+  );
 }
 
 function enhanceArtworkUrl(url?: string | null): string | null {
@@ -106,7 +135,28 @@ function toShareSongSubject(result: ItunesTrackResult): ShareSubject | null {
   };
 }
 
-function toShareAlbumSubject(result: ItunesCollectionResult): ShareSubject {
+function toAlbumLikeResultFromTrack(result: ItunesTrackResult): ItunesAlbumLikeResult | null {
+  if (
+    typeof result.collectionId !== "number" ||
+    !Number.isFinite(result.collectionId) ||
+    typeof result.collectionName !== "string" ||
+    !result.collectionName.trim()
+  ) {
+    return null;
+  }
+
+  return {
+    artistName: result.artistName,
+    collectionId: result.collectionId,
+    collectionName: result.collectionName,
+    artworkUrl100: result.artworkUrl100,
+    releaseDate: result.releaseDate,
+    primaryGenreName: result.primaryGenreName,
+    collectionViewUrl: result.collectionViewUrl,
+  };
+}
+
+function toShareAlbumSubject(result: ItunesAlbumLikeResult): ShareSubject {
   const cover = enhanceArtworkUrl(result.artworkUrl100);
   const releaseYear = extractYear(result.releaseDate);
   const genres = result.primaryGenreName ? [result.primaryGenreName] : [];
@@ -277,7 +327,10 @@ function scoreCandidate(query: string, subject: ShareSubject): number {
   const q = normalizeText(query);
   if (!q) return 0;
 
-  const candidates = [subject.localizedName || "", subject.name];
+  const title = subject.localizedName || "";
+  const subtitle = subject.name;
+  const combined = [title, subtitle].filter(Boolean).join(" ");
+  const candidates = [title, subtitle, combined];
   let score = 0;
 
   for (const text of candidates) {
@@ -288,12 +341,62 @@ function scoreCandidate(query: string, subject: ShareSubject): number {
     if (normalized.includes(q)) score += 25;
   }
 
+  const queryTokens = tokenizeText(query);
+  if (queryTokens.length > 1) {
+    const normalizedCombined = normalizeText(combined);
+    const matchedCount = queryTokens.reduce((count, token) => {
+      const normalizedToken = normalizeText(token);
+      if (!normalizedToken || !normalizedCombined.includes(normalizedToken)) {
+        return count;
+      }
+      return count + 1;
+    }, 0);
+
+    if (matchedCount > 0) {
+      score += matchedCount * 8;
+      if (matchedCount === queryTokens.length) {
+        score += 40;
+      }
+    }
+  }
+
   if (typeof subject.releaseYear === "number") {
     const yearText = String(subject.releaseYear);
     if (yearText.includes(q)) score += 5;
   }
 
   return score;
+}
+
+function hasRelevantSearchMatch(query: string, items: ShareSubject[]): boolean {
+  return items.some((item) => scoreCandidate(query, item) >= ITUNES_RELEVANT_MATCH_SCORE);
+}
+
+function sortBySearchScore(query: string, items: ShareSubject[]): ShareSubject[] {
+  return items
+    .map((item, index) => ({
+      item,
+      index,
+      score: scoreCandidate(query, item),
+    }))
+    .sort((a, b) => b.score - a.score || a.index - b.index)
+    .map(({ item }) => item);
+}
+
+function dedupeSubjectsById(items: ShareSubject[]): ShareSubject[] {
+  const seen = new Set<string>();
+  const deduped: ShareSubject[] = [];
+
+  for (const item of items) {
+    const key = String(item.id);
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    deduped.push(item);
+  }
+
+  return deduped;
 }
 
 function reorderByPromotedIds<T extends { id: number | string }>(
@@ -383,7 +486,37 @@ export async function searchItunesAlbum(params: {
     country: storefront,
     limit: 20,
   });
-  return results.filter(r => r.wrapperType === "collection").map(toShareAlbumSubject);
+  const directItems = results.filter((r) => r.wrapperType === "collection").map(toShareAlbumSubject);
+
+  if (hasRelevantSearchMatch(q, directItems)) {
+    return directItems;
+  }
+
+  // Some Apple Music albums are only discoverable through track search even though
+  // the album itself can still be resolved by collectionId via the iTunes API.
+  const fallbackTrackResults = await fetchItunesSearch<ItunesTrackResult>(q, {
+    entity: "musicTrack",
+    country: storefront,
+    limit: ITUNES_ALBUM_FALLBACK_TRACK_LIMIT,
+  });
+
+  const fallbackItems = sortBySearchScore(
+    q,
+    dedupeSubjectsById(
+      fallbackTrackResults
+        .filter((result) => result.wrapperType === "track")
+        .map(toAlbumLikeResultFromTrack)
+        .filter((item): item is ItunesAlbumLikeResult => item !== null)
+        .map(toShareAlbumSubject)
+        .filter((item) => scoreCandidate(q, item) >= ITUNES_RELEVANT_MATCH_SCORE)
+    )
+  );
+
+  if (fallbackItems.length === 0) {
+    return directItems;
+  }
+
+  return dedupeSubjectsById([...fallbackItems, ...directItems]);
 }
 
 export async function searchItunesMixed(params: {
